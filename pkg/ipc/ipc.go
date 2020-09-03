@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 	"unsafe"
+	"syscall"
 
 	"github.com/google/syzkaller/pkg/cover"
 	"github.com/google/syzkaller/pkg/osutil"
@@ -96,8 +97,17 @@ type CallInfo struct {
 
 type ProgInfo struct {
 	Calls []CallInfo
-	Extra CallInfo // stores Signal and Cover collected from background threads
-}
+	Extra CallInfo
+} 
+
+//modified by Rrooach
+type TasksInfo struct {
+	Progs []ProgInfo
+	Extra ProgInfo // stores Signal and Cover collected from background threads 
+} 
+
+
+
 
 type Env struct {
 	in  []byte
@@ -279,6 +289,7 @@ func (env *Env) Exec(opts *ExecOpts, p *prog.Prog) (output []byte, info *ProgInf
 			return
 		}
 	}
+	syscall.Setpriority(syscall.PRIO_PROCESS, env.pid, int(p.Prio))
 	output, hanged, err0 = env.cmd.exec(opts, progData)
 	if err0 != nil {
 		env.cmd.close()

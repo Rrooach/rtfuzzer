@@ -30,13 +30,46 @@ import (
 	_ "github.com/google/syzkaller/sys"
 )
 
+type TaskFuzzer struct {
+	name              string
+	outputType        OutputType
+	config            *ipc.Config
+	execOpts          *ipc.ExecOpts
+	// procs             []*Proc
+	Taskproc		  []*TaskProc
+	gate              *ipc.Gate 
+	workQueue         *TaskWorkQueue
+	needPoll          chan struct{}
+	choiceTable       *prog.ChoiceTable
+	stats             [StatCount]uint64
+	manager           *rpctype.RPCClient
+	target            *prog.Target
+	triagedCandidates uint32
+
+	faultInjectionEnabled    bool
+	comparisonTracingEnabled bool
+
+	corpusMu     sync.RWMutex
+	corpus       []*prog.Task
+	corpusHashes map[hash.Sig]struct{}
+	corpusPrios  []int64
+	sumPrios     int64
+
+	signalMu     sync.RWMutex
+	corpusSignal signal.Signal // signal of inputs in corpus
+	maxSignal    signal.Signal // max signal ever observed including flakes
+	newSignal    signal.Signal // diff of maxSignal since last sync with master
+
+	logMu sync.Mutex
+}
+
 type Fuzzer struct {
 	name              string
 	outputType        OutputType
 	config            *ipc.Config
 	execOpts          *ipc.ExecOpts
 	procs             []*Proc
-	gate              *ipc.Gate
+	gate              *ipc.Gate 
 	workQueue         *WorkQueue
 	needPoll          chan struct{}
 	choiceTable       *prog.ChoiceTable
@@ -60,6 +93,13 @@ type Fuzzer struct {
 	newSignal    signal.Signal // diff of maxSignal since last sync with master
 
 	logMu sync.Mutex
+}
+
+//modified by Rrooach
+type TaskFuzzerSnapshot struct {
+	corpus      []*prog.Task
+	corpusPrios []int64
+	sumPrios    int64
 }
 
 type FuzzerSnapshot struct {
@@ -247,6 +287,21 @@ func main() {
 		comparisonTracingEnabled: r.CheckResult.Features[host.FeatureComparisons].Enabled,
 		corpusHashes:             make(map[hash.Sig]struct{}),
 	}
+
+	Taskfuzzer := &TaskFuzzer{
+		name:                     *flagName,
+		outputType:               outputType,
+		config:                   config,
+		execOpts:                 execOpts,
+		workQueue:                TasknewWorkQueue(*flagProcs, needPoll),
+		needPoll:                 needPoll,
+		manager:                  manager,
+		target:                   target,
+		faultInjectionEnabled:    r.CheckResult.Features[host.FeatureFault].Enabled,
+		comparisonTracingEnabled: r.CheckResult.Features[host.FeatureComparisons].Enabled,
+		corpusHashes:             make(map[hash.Sig]struct{}),
+	}
+	
 	gateCallback := fuzzer.useBugFrames(r, *flagProcs)
 	fuzzer.gate = ipc.NewGate(2**flagProcs, gateCallback)
 
@@ -260,11 +315,17 @@ func main() {
 
 	for pid := 0; pid < *flagProcs; pid++ {
 		proc, err := newProc(fuzzer, pid)
+		proc1, err1 := TasknewProc(Taskfuzzer, pid)
 		if err != nil {
 			log.Fatalf("failed to create proc: %v", err)
 		}
+		if err1 != nil {
+			log.Fatalf("failed to create rtproc: %v", err)
+		}
 		fuzzer.procs = append(fuzzer.procs, proc)
-		go proc.loop()
+		Taskfuzzer.Taskproc = append(Taskfuzzer.Taskproc, proc1)
+		// go proc.loop()
+		go proc1.Taskloop()
 	}
 
 	fuzzer.pollLoop()
@@ -433,6 +494,15 @@ func (fuzzer *Fuzzer) deserializeInput(inp []byte) *prog.Prog {
 	return p
 }
 
+//modified by Rrooach
+func (fuzzer *TaskFuzzerSnapshot) TaskchooseProgram(r *rand.Rand) *prog.Task {
+	randVal := r.Int63n(fuzzer.sumPrios + 1)
+	idx := sort.Search(len(fuzzer.corpusPrios), func(i int) bool {
+		return fuzzer.corpusPrios[i] >= randVal
+	})
+	return fuzzer.corpus[idx]
+}
+
 func (fuzzer *FuzzerSnapshot) chooseProgram(r *rand.Rand) *prog.Prog {
 	randVal := r.Int63n(fuzzer.sumPrios + 1)
 	idx := sort.Search(len(fuzzer.corpusPrios), func(i int) bool {
@@ -461,6 +531,13 @@ func (fuzzer *Fuzzer) addInputToCorpus(p *prog.Prog, sign signal.Signal, sig has
 		fuzzer.maxSignal.Merge(sign)
 		fuzzer.signalMu.Unlock()
 	}
+}
+
+//modified by Rrooach
+func (fuzzer *TaskFuzzer) Tasksnapshot() TaskFuzzerSnapshot {
+	fuzzer.corpusMu.RLock()
+	defer fuzzer.corpusMu.RUnlock()
+	return TaskFuzzerSnapshot{fuzzer.corpus, fuzzer.corpusPrios, fuzzer.sumPrios}
 }
 
 func (fuzzer *Fuzzer) snapshot() FuzzerSnapshot {
@@ -493,7 +570,36 @@ func (fuzzer *Fuzzer) corpusSignalDiff(sign signal.Signal) signal.Signal {
 	fuzzer.signalMu.RLock()
 	defer fuzzer.signalMu.RUnlock()
 	return fuzzer.corpusSignal.Diff(sign)
+}   
+
+//modified by Rrooach
+func (fuzzer *TaskFuzzer) TaskcheckNewSignal(p *prog.Prog, info *ipc.ProgInfo) (calls []int, extra bool) {
+	fuzzer.signalMu.RLock()
+	defer fuzzer.signalMu.RUnlock()
+	for i, inf := range info.Calls {
+		if fuzzer.TaskcheckNewCallSignal(p, &inf, i) {
+			calls = append(calls, i)
+		}
+	}
+	extra = fuzzer.TaskcheckNewCallSignal(p, &info.Extra, -1)
+	return
 }
+
+
+func (fuzzer *TaskFuzzer) TaskcheckNewCallSignal(p *prog.Prog, info *ipc.CallInfo, call int) bool {
+	diff := fuzzer.maxSignal.DiffRaw(info.Signal, signalPrio(p, info, call))
+	if diff.Empty() {
+		return false
+	}
+	fuzzer.signalMu.RUnlock()
+	fuzzer.signalMu.Lock()
+	fuzzer.maxSignal.Merge(diff)
+	fuzzer.newSignal.Merge(diff)
+	fuzzer.signalMu.Unlock()
+	fuzzer.signalMu.RLock()
+	return true
+}
+
 
 func (fuzzer *Fuzzer) checkNewSignal(p *prog.Prog, info *ipc.ProgInfo) (calls []int, extra bool) {
 	fuzzer.signalMu.RLock()
@@ -506,6 +612,7 @@ func (fuzzer *Fuzzer) checkNewSignal(p *prog.Prog, info *ipc.ProgInfo) (calls []
 	extra = fuzzer.checkNewCallSignal(p, &info.Extra, -1)
 	return
 }
+
 
 func (fuzzer *Fuzzer) checkNewCallSignal(p *prog.Prog, info *ipc.CallInfo, call int) bool {
 	diff := fuzzer.maxSignal.DiffRaw(info.Signal, signalPrio(p, info, call))

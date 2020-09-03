@@ -7,6 +7,33 @@ import (
 	"fmt"
 )
 
+func (t *Task) Clone() *Task {
+	var t1 *Task
+	for _, p := range t.Progs {
+		p1 := &Prog{
+			Target: p.Target,
+			Calls:  make([]*Call, len(p.Calls)),
+		}
+		newargs := make(map[*ResultArg]*ResultArg)
+		for ci, c := range p.Calls {
+			c1 := new(Call)
+			c1.Meta = c.Meta
+			if c.Ret != nil {
+				c1.Ret = clone(c.Ret, newargs).(*ResultArg)
+			}
+			c1.Args = make([]Arg, len(c.Args))
+			for ai, arg := range c.Args {
+				c1.Args[ai] = clone(arg, newargs)
+			}
+			p1.Calls[ci] = c1
+		}
+		p1.debugValidate()
+		t1.Progs = append(t1.Progs, p1)
+	} 
+	return t1
+}
+
+
 func (p *Prog) Clone() *Prog {
 	p1 := &Prog{
 		Target: p.Target,

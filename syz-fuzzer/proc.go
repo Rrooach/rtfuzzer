@@ -22,6 +22,41 @@ import (
 	"github.com/google/syzkaller/prog"
 )
 
+type TaskProc struct {
+	fuzzer            *TaskFuzzer
+	pid               int
+	env               *ipc.Env
+	rnd               *rand.Rand
+	execOpts          *ipc.ExecOpts
+	execOptsCover     *ipc.ExecOpts
+	execOptsComps     *ipc.ExecOpts
+	execOptsNoCollide *ipc.ExecOpts
+}
+
+func TasknewProc(fuzzer *TaskFuzzer, pid int) (*TaskProc, error) {
+	env, err := ipc.MakeEnv(fuzzer.config, pid)
+	if err != nil {
+		return nil, err
+	}
+	rnd := rand.New(rand.NewSource(time.Now().UnixNano() + int64(pid)*1e12))
+	execOptsNoCollide := *fuzzer.execOpts
+	execOptsNoCollide.Flags &= ^ipc.FlagCollide
+	execOptsCover := execOptsNoCollide
+	execOptsCover.Flags |= ipc.FlagCollectCover
+	execOptsComps := execOptsNoCollide
+	execOptsComps.Flags |= ipc.FlagCollectComps
+	proc := &TaskProc{
+		fuzzer:            fuzzer,
+		pid:               pid,
+		env:               env,
+		rnd:               rnd,
+		execOpts:          fuzzer.execOpts,
+		execOptsCover:     &execOptsCover,
+		execOptsComps:     &execOptsComps,
+		execOptsNoCollide: &execOptsNoCollide,
+	}
+	return proc, nil
+}
 // Proc represents a single fuzzing process (executor).
 type Proc struct {
 	fuzzer            *Fuzzer
@@ -59,6 +94,48 @@ func newProc(fuzzer *Fuzzer, pid int) (*Proc, error) {
 	return proc, nil
 }
 
+//modified by Rrooach
+func (proc *TaskProc) Taskloop() {
+	generatePeriod := 100
+	if proc.fuzzer.config.Flags&ipc.FlagSignal == 0 {
+		// If we don't have real coverage signal, generate programs more frequently
+		// because fallback signal is weak.
+		generatePeriod = 2
+	}
+	for i := 0; ; i++ { 
+		item := proc.fuzzer.workQueue.Taskdequeue()
+		if item != nil {
+			switch item := item.(type) {
+			case *WorkTriage:
+			// 	// proc.triageInput(item)
+			case *TaskWorkCandidate:
+				proc.Taskexecute(proc.execOpts, item.p, item.flags, StatCandidate)
+			case *WorkSmash:
+			// 	// proc.smashInput(item)
+			default:
+				log.Fatalf("unknown work type: %#v", item)
+			}
+			continue
+		} 
+		ct := proc.fuzzer.choiceTable
+		fuzzerSnapshot := proc.fuzzer.Tasksnapshot()
+		if len(fuzzerSnapshot.corpus) == 0 || i%generatePeriod == 0 {
+			// Generate a new prog. 
+			plist := proc.fuzzer.target.GenerateTask(proc.rnd, prog.RecommendedCalls, ct)
+			log.Logf(1, "#%v: generated", proc.pid)
+			proc.Taskexecute(proc.execOpts, plist, ProgNormal, StatGenerate)
+			proc.Taskexecute(proc.execOpts, plist, ProgNormal, StatGenerate)
+		} else {
+			// Mutate an existing prog.
+			plist := fuzzerSnapshot.TaskchooseProgram(proc.rnd).Clone()
+			plist.TaskMutate(proc.rnd, prog.RecommendedCalls, ct, fuzzerSnapshot.corpus)
+			log.Logf(1, "#%v: mutated", proc.pid)
+			proc.Taskexecute(proc.execOpts, plist, ProgNormal, StatFuzz)
+		}
+	}
+}
+
+
 func (proc *Proc) loop() {
 	generatePeriod := 100
 	if proc.fuzzer.config.Flags&ipc.FlagSignal == 0 {
@@ -66,7 +143,7 @@ func (proc *Proc) loop() {
 		// because fallback signal is weak.
 		generatePeriod = 2
 	}
-	for i := 0; ; i++ {
+	for i := 0; ; i++ {  
 		item := proc.fuzzer.workQueue.dequeue()
 		if item != nil {
 			switch item := item.(type) {
@@ -80,14 +157,14 @@ func (proc *Proc) loop() {
 				log.Fatalf("unknown work type: %#v", item)
 			}
 			continue
-		}
-
+		} 
 		ct := proc.fuzzer.choiceTable
 		fuzzerSnapshot := proc.fuzzer.snapshot()
-		if len(fuzzerSnapshot.corpus) == 0 || i%generatePeriod == 0 {
-			// Generate a new prog.
+		if len(fuzzerSnapshot.corpus) == 0 || i%generatePeriod == 0 { 
+			// plist := proc.fuzzer.target.GenerateTask(proc.rnd, prog.RecommendedCalls, ct)
 			p := proc.fuzzer.target.Generate(proc.rnd, prog.RecommendedCalls, ct)
 			log.Logf(1, "#%v: generated", proc.pid)
+			proc.execute(proc.execOpts, p, ProgNormal, StatGenerate)
 			proc.execute(proc.execOpts, p, ProgNormal, StatGenerate)
 		} else {
 			// Mutate an existing prog.
@@ -247,6 +324,33 @@ func (proc *Proc) executeHintSeed(p *prog.Prog, call int) {
 	})
 }
 
+
+//modified by Rrooach
+func (proc *TaskProc) Taskexecute(execOpts *ipc.ExecOpts, task *prog.Task, flags ProgTypes, stat Stat) *ipc.ProgInfo {
+	/* set channel 
+		if find any prog within a task has new coverage, break the loop
+	*/
+	ch := make(chan *ipc.ProgInfo, 100)
+	for _, p := range task.Progs {  
+		go proc.TaskexecuteRaw(execOpts, p, stat, ch)
+		var info  *ipc.ProgInfo
+		calls, extra := proc.fuzzer.TaskcheckNewSignal(p, info)
+		for _, callIndex := range calls {
+			proc.TaskenqueueCallTriage(task, flags, callIndex, info.Calls[callIndex])
+		}
+		if extra {
+			proc.TaskenqueueCallTriage(task, flags, -1, info.Extra)
+			break
+		} 
+	} 
+	var infos *ipc.ProgInfo
+	for info1 := range ch {
+		infos = info1
+	}
+	close(ch)
+	return infos
+}
+
 func (proc *Proc) execute(execOpts *ipc.ExecOpts, p *prog.Prog, flags ProgTypes, stat Stat) *ipc.ProgInfo {
 	info := proc.executeRaw(execOpts, p, stat)
 	calls, extra := proc.fuzzer.checkNewSignal(p, info)
@@ -258,6 +362,21 @@ func (proc *Proc) execute(execOpts *ipc.ExecOpts, p *prog.Prog, flags ProgTypes,
 	}
 	return info
 }
+
+//modified by Rrooach
+func (proc *TaskProc) TaskenqueueCallTriage(p *prog.Task, flags ProgTypes, callIndex int, info ipc.CallInfo) {
+	// info.Signal points to the output shmem region, detach it before queueing.
+	info.Signal = append([]uint32{}, info.Signal...)
+	// None of the caller use Cover, so just nil it instead of detaching.
+	// Note: triage input uses executeRaw to get coverage.
+	info.Cover = nil
+	proc.fuzzer.workQueue.Taskenqueue(&TaskWorkTriage{
+		p: 	   p.Clone(),
+		call:  callIndex,
+		info:  info,
+		flags: flags,
+	})
+} 
 
 func (proc *Proc) enqueueCallTriage(p *prog.Prog, flags ProgTypes, callIndex int, info ipc.CallInfo) {
 	// info.Signal points to the output shmem region, detach it before queueing.
@@ -271,6 +390,40 @@ func (proc *Proc) enqueueCallTriage(p *prog.Prog, flags ProgTypes, callIndex int
 		info:  info,
 		flags: flags,
 	})
+}
+
+//modified by Rrooach
+func (proc *TaskProc) TaskexecuteRaw(opts *ipc.ExecOpts, p *prog.Prog, stat Stat, ch chan *ipc.ProgInfo) {
+	if opts.Flags&ipc.FlagDedupCover == 0 {
+		log.Fatalf("dedup cover is not enabled")
+	}
+	for _, call := range p.Calls {
+		if !proc.fuzzer.choiceTable.Enabled(call.Meta.ID) {
+			fmt.Printf("executing disabled syscall %v", call.Meta.Name)
+			panic("disabled syscall")
+		}
+	}
+
+	// Limit concurrency window and do leak checking once in a while.
+	ticket := proc.fuzzer.gate.Enter()
+	defer proc.fuzzer.gate.Leave(ticket)
+
+	proc.logProgram(opts, p)
+	for try := 0; ; try++ {
+		atomic.AddUint64(&proc.fuzzer.stats[stat], 1)
+		output, info, hanged, err := proc.env.Exec(opts, p)
+		if err != nil {
+			if try > 10 {
+				log.Fatalf("executor %v failed %v times:\n%v", proc.pid, try, err)
+			}
+			log.Logf(4, "fuzzer detected executor failure='%v', retrying #%d", err, try+1)
+			debug.FreeOSMemory()
+			time.Sleep(time.Second)
+			continue
+		}
+		log.Logf(2, "result hanged=%v: %s", hanged, output)
+		ch <- info
+	}
 }
 
 func (proc *Proc) executeRaw(opts *ipc.ExecOpts, p *prog.Prog, stat Stat) *ipc.ProgInfo {
@@ -305,6 +458,52 @@ func (proc *Proc) executeRaw(opts *ipc.ExecOpts, p *prog.Prog, stat Stat) *ipc.P
 		return info
 	}
 }
+
+//modified by Rrooach
+func (proc *TaskProc) logProgram(opts *ipc.ExecOpts, p *prog.Prog) {
+	if proc.fuzzer.outputType == OutputNone {
+		return
+	}
+
+	data := p.Serialize()
+	strOpts := ""
+	if opts.Flags&ipc.FlagInjectFault != 0 {
+		strOpts = fmt.Sprintf(" (fault-call:%v fault-nth:%v)", opts.FaultCall, opts.FaultNth)
+	}
+
+	// The following output helps to understand what program crashed kernel.
+	// It must not be intermixed.
+	switch proc.fuzzer.outputType {
+	case OutputStdout:
+		now := time.Now()
+		proc.fuzzer.logMu.Lock()
+		fmt.Printf("%02v:%02v:%02v executing program %v%v:\n%s\n",
+			now.Hour(), now.Minute(), now.Second(),
+			proc.pid, strOpts, data)
+		proc.fuzzer.logMu.Unlock()
+	case OutputDmesg:
+		fd, err := syscall.Open("/dev/kmsg", syscall.O_WRONLY, 0)
+		if err == nil {
+			buf := new(bytes.Buffer)
+			fmt.Fprintf(buf, "syzkaller: executing program %v%v:\n%s\n",
+				proc.pid, strOpts, data)
+			syscall.Write(fd, buf.Bytes())
+			syscall.Close(fd)
+		}
+	case OutputFile:
+		f, err := os.Create(fmt.Sprintf("%v-%v.prog", proc.fuzzer.name, proc.pid))
+		if err == nil {
+			if strOpts != "" {
+				fmt.Fprintf(f, "#%v\n", strOpts)
+			}
+			f.Write(data)
+			f.Close()
+		}
+	default:
+		log.Fatalf("unknown output type: %v", proc.fuzzer.outputType)
+	}
+}
+
 
 func (proc *Proc) logProgram(opts *ipc.ExecOpts, p *prog.Prog) {
 	if proc.fuzzer.outputType == OutputNone {

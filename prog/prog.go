@@ -7,7 +7,12 @@ import (
 	"fmt"
 )
 
+type Task struct {
+	Progs	 []*Prog
+}
+
 type Prog struct {
+	Prio 	 uint32
 	Target   *Target
 	Calls    []*Call
 	Comments []string

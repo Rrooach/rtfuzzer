@@ -8,11 +8,57 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
-	"sort"
+	"sort" 
 )
 
 // Maximum length of generated binary blobs inserted into the program.
 const maxBlobLen = uint64(100 << 10)
+
+//modified by Rrooach
+func (plist *Task) TaskMutate(rs rand.Source, ncalls int, ct *ChoiceTable, corpus []*Task) {
+ 	for _, p := range plist.Progs {
+		//modified by Rrooach
+		//add proi mutation
+		
+
+		r := newRand(p.Target, rs)
+		p.Prio = uint32(r.Intn(100))
+		if ncalls < len(p.Calls) {
+			ncalls = len(p.Calls)
+		}
+		ctx := &Taskmutator{
+			p:      p,
+			r:      r,
+			ncalls: ncalls,
+			ct:     ct,
+			corpus: corpus,
+		}
+		for stop, ok := false, false; !stop; stop = ok && len(p.Calls) != 0 && r.oneOf(3) {
+			switch {
+			case r.oneOf(5):
+				// Not all calls have anything squashable,
+				// so this has lower priority in reality.
+				ok = ctx.TasksquashAny()
+			case r.nOutOf(1, 100):
+				ok = ctx.Tasksplice()
+			case r.nOutOf(20, 31):
+				ok = ctx.TaskinsertCall()
+			case r.nOutOf(10, 11):
+				ok = ctx.TaskmutateArg()
+			default:
+				ok = ctx.TaskremoveCall()
+			}
+		}
+		p.sanitizeFix()
+		p.debugValidate()
+		if got := len(p.Calls); got < 1 || got > ncalls {
+			panic(fmt.Sprintf("bad number of calls after mutation: %v, want [1, %v]", got, ncalls))
+		}
+
+	}
+	
+}
+
 
 // Mutate program p.
 //
@@ -58,6 +104,17 @@ func (p *Prog) Mutate(rs rand.Source, ncalls int, ct *ChoiceTable, corpus []*Pro
 
 // Internal state required for performing mutations -- currently this matches
 // the arguments passed to Mutate().
+
+//modified by Rrooach
+type Taskmutator struct {
+	p      *Prog        // The program to mutate.
+	r      *randGen     // The randGen instance.
+	ncalls int          // The allowed maximum calls in mutated program.
+	ct     *ChoiceTable // ChoiceTable for syscalls.
+	corpus []*Task      // The entire corpus, including original program p.
+}
+
+
 type mutator struct {
 	p      *Prog        // The program to mutate.
 	r      *randGen     // The randGen instance.
@@ -65,6 +122,152 @@ type mutator struct {
 	ct     *ChoiceTable // ChoiceTable for syscalls.
 	corpus []*Prog      // The entire corpus, including original program p.
 }
+
+
+//modified by Rrooach
+func (ctx *Taskmutator) Tasksplice() bool {
+	p, r := ctx.p, ctx.r
+	if len(ctx.corpus) == 0 || len(p.Calls) == 0 || len(p.Calls) >= ctx.ncalls {
+		return false
+	}
+	tmp := r.Intn(len(ctx.corpus))
+	p0 := ctx.corpus[tmp].Progs[r.Intn(len(ctx.corpus[tmp].Progs))]
+	p0c := p0.Clone()
+	idx := r.Intn(len(p.Calls))
+	p.Calls = append(p.Calls[:idx], append(p0c.Calls, p.Calls[idx:]...)...)
+	for i := len(p.Calls) - 1; i >= ctx.ncalls; i-- {
+		p.removeCall(i)
+	}
+	return true
+}
+
+// Picks a random complex pointer and squashes its arguments into an ANY.
+// Subsequently, if the ANY contains blobs, mutates a random blob.
+func (ctx *Taskmutator) TasksquashAny() bool {
+	p, r := ctx.p, ctx.r
+	complexPtrs := p.complexPtrs()
+	if len(complexPtrs) == 0 {
+		return false
+	}
+	ptr := complexPtrs[r.Intn(len(complexPtrs))]
+	if !p.Target.isAnyPtr(ptr.Type()) {
+		p.Target.squashPtr(ptr)
+	}
+	var blobs []*DataArg
+	var bases []*PointerArg
+	ForeachSubArg(ptr, func(arg Arg, ctx *ArgCtx) {
+		if data, ok := arg.(*DataArg); ok && arg.Dir() != DirOut {
+			blobs = append(blobs, data)
+			bases = append(bases, ctx.Base)
+		}
+	})
+	if len(blobs) == 0 {
+		return false
+	}
+	// TODO(dvyukov): we probably want special mutation for ANY.
+	// E.g. merging adjacent ANYBLOBs (we don't create them,
+	// but they can appear in future); or replacing ANYRES
+	// with a blob (and merging it with adjacent blobs).
+	idx := r.Intn(len(blobs))
+	arg := blobs[idx]
+	base := bases[idx]
+	baseSize := base.Res.Size()
+	arg.data = mutateData(r, arg.Data(), 0, maxBlobLen)
+	// Update base pointer if size has increased.
+	for i, _ := range ctx.corpus {
+		if baseSize < base.Res.Size() {
+			s := analyze(ctx.ct, ctx.corpus[i].Progs, p, p.Calls[0])
+			newArg := r.allocAddr(s, base.Type(), base.Dir(), base.Res.Size(), base.Res)
+			*base = *newArg
+		}
+	}
+	
+	return true
+}
+
+// Inserts a new call at a randomly chosen point (with bias towards the end of
+// existing program). Does not insert a call if program already has ncalls.
+func (ctx *Taskmutator) TaskinsertCall() bool {
+	p, r := ctx.p, ctx.r
+	if len(p.Calls) >= ctx.ncalls {
+		return false
+	}
+	idx := r.biasedRand(len(p.Calls)+1, 5)
+	var c *Call
+	if idx < len(p.Calls) {
+		c = p.Calls[idx]
+	}
+	for i, _ := range ctx.corpus {
+		s := analyze(ctx.ct, ctx.corpus[i].Progs, p, c)
+		calls := r.generateCall(s, p, idx)
+		p.insertBefore(c, calls)
+		for len(p.Calls) > ctx.ncalls {
+			p.removeCall(idx)
+		}
+	}
+	
+	return true
+}
+
+// Removes a random call from program.
+func (ctx *Taskmutator) TaskremoveCall() bool {
+	p, r := ctx.p, ctx.r
+	if len(p.Calls) == 0 {
+		return false
+	}
+	idx := r.Intn(len(p.Calls))
+	p.removeCall(idx)
+	return true
+}
+
+// Mutate an argument of a random call.
+func (ctx *Taskmutator) TaskmutateArg() bool {
+	p, r := ctx.p, ctx.r
+	if len(p.Calls) == 0 {
+		return false
+	}
+
+	idx := chooseCall(p, r)
+	if idx < 0 {
+		return false
+	}
+	c := p.Calls[idx]
+	updateSizes := true
+	for stop, ok := false, false; !stop; stop = ok && r.oneOf(3) {
+		ok = true
+		ma := &mutationArgs{target: p.Target}
+		ForeachArg(c, ma.collectArg)
+		if len(ma.args) == 0 {
+			return false
+		}
+		for i, _ := range ctx.corpus {
+			s := analyze(ctx.ct, ctx.corpus[i].Progs, p, c)
+			arg, argCtx := ma.chooseArg(r.Rand)
+			calls, ok1 := p.Target.mutateArg(r, s, arg, argCtx, &updateSizes)
+		
+		
+			if !ok1 {
+				ok = false
+				continue
+			}
+			p.insertBefore(c, calls)
+			idx += len(calls)
+			for len(p.Calls) > ctx.ncalls {
+				idx--
+				p.removeCall(idx)
+			}
+			if idx < 0 || idx >= len(p.Calls) || p.Calls[idx] != c {
+				panic(fmt.Sprintf("wrong call index: idx=%v calls=%v p.Calls=%v ncalls=%v",
+					idx, len(calls), len(p.Calls), ctx.ncalls))
+			}
+			if updateSizes {
+				p.Target.assignSizesCall(c)
+			}
+		}
+	}
+	return true
+}
+
 
 // This function selects a random other program p0 out of the corpus, and
 // mutates ctx.p as follows: preserve ctx.p's Calls up to a random index i

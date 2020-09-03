@@ -38,6 +38,8 @@ const (
 // first execution. But we are not sure yet if the coverage is real or not.
 // During triage we understand if these programs in fact give new coverage,
 // and if yes, minimize them and add to corpus.
+
+ 
 type WorkTriage struct {
 	p     *prog.Prog
 	call  int
@@ -45,9 +47,13 @@ type WorkTriage struct {
 	flags ProgTypes
 }
 
+
+
 // WorkCandidate are programs from hub.
 // We don't know yet if they are useful for this fuzzer or not.
 // A proc handles them the same way as locally generated/mutated programs.
+ 
+
 type WorkCandidate struct {
 	p     *prog.Prog
 	flags ProgTypes
@@ -56,10 +62,20 @@ type WorkCandidate struct {
 // WorkSmash are programs just added to corpus.
 // During smashing these programs receive a one-time special attention
 // (emit faults, collect comparison hints, etc).
+ 
 type WorkSmash struct {
 	p    *prog.Prog
 	call int
 }
+
+// modified by Rrooach
+func TasknewWorkQueue(procs int, needCandidates chan struct{}) *TaskWorkQueue {
+	return &TaskWorkQueue{
+		procs:          procs,
+		needCandidates: needCandidates,
+	}
+}
+
 
 func newWorkQueue(procs int, needCandidates chan struct{}) *WorkQueue {
 	return &WorkQueue{
@@ -125,6 +141,109 @@ func (wq *WorkQueue) dequeue() (item interface{}) {
 }
 
 func (wq *WorkQueue) wantCandidates() bool {
+	wq.mu.RLock()
+	defer wq.mu.RUnlock()
+	return len(wq.candidate) < wq.procs
+}
+
+
+type TaskWorkQueue struct {
+	mu              sync.RWMutex
+	triageCandidate []*TaskWorkTriage
+	candidate       []*TaskWorkCandidate
+	triage          []*TaskWorkTriage
+	smash           []*TaskWorkSmash
+
+	procs          int
+	needCandidates chan struct{}
+} 
+ 
+type TaskWorkTriage struct {
+	p	 *prog.Task
+	call  int
+	info  ipc.CallInfo
+	flags ProgTypes
+}
+
+
+
+// WorkCandidate are programs from hub.
+// We don't know yet if they are useful for this fuzzer or not.
+// A proc handles them the same way as locally generated/mutated programs.
+ 
+//modified by Rrooach
+type TaskWorkCandidate struct {
+	p	 *prog.Task
+	flags ProgTypes
+} 
+
+// WorkSmash are programs just added to corpus.
+// During smashing these programs receive a one-time special attention
+// (emit faults, collect comparison hints, etc).
+ 
+type TaskWorkSmash struct {
+	plist *prog.Task
+	call int
+}
+ 
+
+func (wq *TaskWorkQueue) Taskenqueue(item interface{}) {
+	wq.mu.Lock()
+	defer wq.mu.Unlock()
+	switch item := item.(type) {
+	case *TaskWorkTriage:
+		if item.flags&ProgCandidate != 0 {
+			wq.triageCandidate = append(wq.triageCandidate, item)
+		} else {
+			wq.triage = append(wq.triage, item)
+		}
+	case *TaskWorkCandidate:
+		wq.candidate = append(wq.candidate, item)
+	case *TaskWorkSmash:
+		wq.smash = append(wq.smash, item)
+	default:
+		panic("unknown work type")
+	}
+}
+
+func (wq *TaskWorkQueue) Taskdequeue() (item interface{}) {
+	wq.mu.RLock()
+	if len(wq.triageCandidate)+len(wq.candidate)+len(wq.triage)+len(wq.smash) == 0 {
+		wq.mu.RUnlock()
+		return nil
+	}
+	wq.mu.RUnlock()
+	wq.mu.Lock()
+	TaskwantCandidates := false
+	if len(wq.triageCandidate) != 0 {
+		last := len(wq.triageCandidate) - 1
+		item = wq.triageCandidate[last]
+		wq.triageCandidate = wq.triageCandidate[:last]
+	} else if len(wq.candidate) != 0 {
+		last := len(wq.candidate) - 1
+		item = wq.candidate[last]
+		wq.candidate = wq.candidate[:last]
+		TaskwantCandidates = len(wq.candidate) < wq.procs
+	} else if len(wq.triage) != 0 {
+		last := len(wq.triage) - 1
+		item = wq.triage[last]
+		wq.triage = wq.triage[:last]
+	} else if len(wq.smash) != 0 {
+		last := len(wq.smash) - 1
+		item = wq.smash[last]
+		wq.smash = wq.smash[:last]
+	}
+	wq.mu.Unlock()
+	if TaskwantCandidates {
+		select {
+		case wq.needCandidates <- struct{}{}:
+		default:
+		}
+	}
+	return item
+}
+
+func (wq *TaskWorkQueue) TaskwantCandidates() bool {
 	wq.mu.RLock()
 	defer wq.mu.RUnlock()
 	return len(wq.candidate) < wq.procs
