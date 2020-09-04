@@ -11,6 +11,8 @@ type Prog struct {
 	Target   *Target
 	Calls    []*Call
 	Comments []string
+	//modified by Rrooach
+	Prio int
 }
 
 type Call struct {

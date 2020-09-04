@@ -33,6 +33,8 @@ func (p *Prog) Mutate(rs rand.Source, ncalls int, ct *ChoiceTable, corpus []*Pro
 		ct:     ct,
 		corpus: corpus,
 	}
+	//modified by Rrooach
+	p.Prio = r.Intn(100)
 	for stop, ok := false, false; !stop; stop = ok && len(p.Calls) != 0 && r.oneOf(3) {
 		switch {
 		case r.oneOf(5):

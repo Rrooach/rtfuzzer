@@ -86,18 +86,49 @@ func (proc *Proc) loop() {
 		fuzzerSnapshot := proc.fuzzer.snapshot()
 		if len(fuzzerSnapshot.corpus) == 0 || i%generatePeriod == 0 {
 			// Generate a new prog.
-			p := proc.fuzzer.target.Generate(proc.rnd, prog.RecommendedCalls, ct)
+			// p := proc.fuzzer.target.Generate(proc.rnd, prog.RecommendedCalls, ct)
+			tasks := proc.fuzzer.target.TaskGenerate(proc.rnd, prog.RecommendedCalls, ct)
 			log.Logf(1, "#%v: generated", proc.pid)
-			proc.execute(proc.execOpts, p, ProgNormal, StatGenerate)
+			// proc.execute(proc.execOpts, p, ProgNormal, StatGenerate)
+			proc.Taskexecute(proc.execOpts, task, ProgNormal, StatGenerate)
 		} else {
 			// Mutate an existing prog.
-			p := fuzzerSnapshot.chooseProgram(proc.rnd).Clone()
-			p.Mutate(proc.rnd, prog.RecommendedCalls, ct, fuzzerSnapshot.corpus)
+			// modified by Rrooach
+			task := fuzzerSnapshot.TaskchooseProgram(proc.rnd).Clone()
+			for i, p := range task {
+				p.Mutate(proc.rnd, prog.RecommendedCalls, ct, fuzzerSnapshot.corpus[i])				
+			}
+			// p := fuzzerSnapshot.chooseProgram(proc.rnd).Clone()
+			// p.Mutate(proc.rnd, prog.RecommendedCalls, ct, fuzzerSnapshot.corpus)
 			log.Logf(1, "#%v: mutated", proc.pid)
-			proc.execute(proc.execOpts, p, ProgNormal, StatFuzz)
+			// proc.execute(proc.execOpts, p, ProgNormal, StatFuzz)
+			proc.Taskexecute(proc.execOpts, task, ProgNormal, StatFuzz)
 		}
 	}
 }
+
+//modified by Rrooach
+func (proc *Proc) TasktriageInput(item *WorkTriage) {
+	log.Logf(1, "#%v: triaging type=%x", proc.pid, item.flags)
+
+	
+	for i, P := range item.p {
+		&WorkTriage{
+			p:     p.Clone(),
+			call:  callIndex,
+			info:  info,
+			flags: flags,
+		}
+		go proc.triageInput()
+	}
+	proc.fuzzer.addInputToCorpus(item.p, inputSignal, sig)
+
+	if item.flags&ProgSmashed == 0 {
+		proc.fuzzer.workQueue.enqueue(&WorkSmash{item.p, item.call})
+	}
+}
+
+
 
 func (proc *Proc) triageInput(item *WorkTriage) {
 	log.Logf(1, "#%v: triaging type=%x", proc.pid, item.flags)
@@ -247,6 +278,33 @@ func (proc *Proc) executeHintSeed(p *prog.Prog, call int) {
 	})
 }
 
+
+//modified by Rrooach
+func (proc *Proc)Taskexecute(execOpts *ipc.ExecOpts, task []*prog.Prog, flags ProgTypes, stat Stat) []*ipc.ProgInfo {
+	var infos []*ipc.ProgInfo
+	ch := make(chan ipc.ProcInfo, task.len())
+	wg := sync.WaitGroup{}
+	for _, p := range task {
+		wg.Add(1)
+		go info := proc.TaskexecuteRaw(execOpts, p, stat, ch)
+		wg.Done()
+	}
+	wg.Wait()
+	for info := range ch {
+		infos = append(infos, info)
+	}
+	for j, p := range task {
+		calls, extra := proc.fuzzer.checkNewSignal(p, infos[j])	
+		for _, callIndex := range calls {
+			proc.enqueueCallTriage(p, flags, callIndex, infos[j].Calls[callIndex])
+		}
+		if extra {
+			proc.enqueueCallTriage(p, flags, -1, infos[j].Extra)
+		}
+	}
+	return infos
+}
+
 func (proc *Proc) execute(execOpts *ipc.ExecOpts, p *prog.Prog, flags ProgTypes, stat Stat) *ipc.ProgInfo {
 	info := proc.executeRaw(execOpts, p, stat)
 	calls, extra := proc.fuzzer.checkNewSignal(p, info)
@@ -271,6 +329,40 @@ func (proc *Proc) enqueueCallTriage(p *prog.Prog, flags ProgTypes, callIndex int
 		info:  info,
 		flags: flags,
 	})
+}
+
+//modified by Rrooach
+func (proc *Proc) TaskexecuteRaw(opts *ipc.ExecOpts, p *prog.Prog, stat Stat, c chan ipc.ProcInfo) {
+	if opts.Flags&ipc.FlagDedupCover == 0 {
+		log.Fatalf("dedup cover is not enabled")
+	}
+	for _, call := range p.Calls {
+		if !proc.fuzzer.choiceTable.Enabled(call.Meta.ID) {
+			fmt.Printf("executing disabled syscall %v", call.Meta.Name)
+			panic("disabled syscall")
+		}
+	}
+
+	// Limit concurrency window and do leak checking once in a while.
+	ticket := proc.fuzzer.gate.Enter()
+	defer proc.fuzzer.gate.Leave(ticket)
+
+	proc.logProgram(opts, p)
+	for try := 0; ; try++ {
+		atomic.AddUint64(&proc.fuzzer.stats[stat], 1)
+		output, info, hanged, err := proc.env.Exec(opts, p)
+		if err != nil {
+			if try > 10 {
+				log.Fatalf("executor %v failed %v times:\n%v", proc.pid, try, err)
+			}
+			log.Logf(4, "fuzzer detected executor failure='%v', retrying #%d", err, try+1)
+			debug.FreeOSMemory()
+			time.Sleep(time.Second)
+			continue
+		}
+		log.Logf(2, "result hanged=%v: %s", hanged, output)
+		c <- info
+	}
 }
 
 func (proc *Proc) executeRaw(opts *ipc.ExecOpts, p *prog.Prog, stat Stat) *ipc.ProgInfo {

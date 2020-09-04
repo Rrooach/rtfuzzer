@@ -49,6 +49,8 @@ type Fuzzer struct {
 	comparisonTracingEnabled bool
 
 	corpusMu     sync.RWMutex
+	//modified by Rrooach
+	// corpus 		 [][]*prog.Prog
 	corpus       []*prog.Prog
 	corpusHashes map[hash.Sig]struct{}
 	corpusPrios  []int64
@@ -63,7 +65,9 @@ type Fuzzer struct {
 }
 
 type FuzzerSnapshot struct {
-	corpus      []*prog.Prog
+	//modified by Rrooach
+	corpus 		 [][]*prog.Prog
+	// corpus      []*prog.Prog
 	corpusPrios []int64
 	sumPrios    int64
 }
@@ -433,7 +437,16 @@ func (fuzzer *Fuzzer) deserializeInput(inp []byte) *prog.Prog {
 	return p
 }
 
-func (fuzzer *FuzzerSnapshot) chooseProgram(r *rand.Rand) *prog.Prog {
+//modified by Rrooach
+func (fuzzer *FuzzerSnapshot) TaskchooseProgram(r *rand.Rand) []*prog.Prog {
+	randVal := r.Int63n(fuzzer.sumPrios + 1)
+	idx := sort.Search(len(fuzzer.corpusPrios), func(i int) bool {
+		return fuzzer.corpusPrios[i] >= randVal
+	})
+	return fuzzer.corpus[idx]
+}
+
+func (fuzzer *FuzzerSnapshot) chooseProgram(r *rand.Rand) []*prog.Prog {
 	randVal := r.Int63n(fuzzer.sumPrios + 1)
 	idx := sort.Search(len(fuzzer.corpusPrios), func(i int) bool {
 		return fuzzer.corpusPrios[i] >= randVal
@@ -493,6 +506,21 @@ func (fuzzer *Fuzzer) corpusSignalDiff(sign signal.Signal) signal.Signal {
 	fuzzer.signalMu.RLock()
 	defer fuzzer.signalMu.RUnlock()
 	return fuzzer.corpusSignal.Diff(sign)
+}
+
+//modified by Rrooach
+func (fuzzer *Fuzzer) TaskcheckNewSignal(task []*prog.Prog, info []*ipc.ProgInfo) (calls []int, extra bool) {
+	for j, p := range task {
+		fuzzer.signalMu.RLock()
+		defer fuzzer.signalMu.RUnlock()
+		for i, inf := range info[j].Calls {
+			if fuzzer.checkNewCallSignal(p, &inf, i) {
+				calls = append(calls, i)
+			}
+		}
+		extra = fuzzer.checkNewCallSignal(p, &info.Extra, -1)
+	} 
+	return
 }
 
 func (fuzzer *Fuzzer) checkNewSignal(p *prog.Prog, info *ipc.ProgInfo) (calls []int, extra bool) {
