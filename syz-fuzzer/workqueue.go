@@ -38,12 +38,14 @@ const (
 // first execution. But we are not sure yet if the coverage is real or not.
 // During triage we understand if these programs in fact give new coverage,
 // and if yes, minimize them and add to corpus.
+// modified by Rrooach
 type WorkTriage struct {
-	p      []*prog.Prog
-	call   int
-	info   ipc.CallInfo
-	flags  ProgTypes
-	
+	task  []*prog.Prog
+	p     *prog.Prog
+	call  int
+	info  ipc.CallInfo
+	flags ProgTypes
+
 	pIndex int
 }
 
@@ -51,7 +53,8 @@ type WorkTriage struct {
 // We don't know yet if they are useful for this fuzzer or not.
 // A proc handles them the same way as locally generated/mutated programs.
 type WorkCandidate struct {
-	p     []*prog.Prog
+	task  []*prog.Prog
+	p     *prog.Prog
 	flags ProgTypes
 }
 
@@ -59,8 +62,10 @@ type WorkCandidate struct {
 // During smashing these programs receive a one-time special attention
 // (emit faults, collect comparison hints, etc).
 type WorkSmash struct {
-	p    []*prog.Prog
+	task []*prog.Prog
+	p    *prog.Prog
 	call int
+	prog int
 }
 
 func newWorkQueue(procs int, needCandidates chan struct{}) *WorkQueue {

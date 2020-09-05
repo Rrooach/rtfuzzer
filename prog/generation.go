@@ -42,12 +42,14 @@ func (target *Target) TaskGenerate(rs rand.Source, ncalls int, ct *ChoiceTable) 
 	ListLen := rand.Intn(8-2)+2
 	
 	for i := 0; i < ListLen; i++ {
+		Prio := rand.Intn(100)
 		p := &Prog{
 			Target: target,
+			Prio:   Prio,
 		}
 		r := newRand(target, rs)
 		s := newState(target, ct, nil)
-		p.Prio = r.Intn(100)
+		
 		for len(p.Calls) < ncalls {
 			calls := r.generateCall(s, p, len(p.Calls))
 			for _, c := range calls {
