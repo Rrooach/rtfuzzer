@@ -12,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"syscall"
+	"sort"
 	"time"
 
 	"github.com/google/syzkaller/pkg/cover"
@@ -28,6 +29,7 @@ type Proc struct {
 	fuzzer            *Fuzzer
 	pid               int
 	env               *ipc.Env
+	envs 			  []*ipc.Env // length = 8
 	rnd               *rand.Rand
 	execOpts          *ipc.ExecOpts
 	execOptsCover     *ipc.ExecOpts
@@ -47,10 +49,20 @@ func newProc(fuzzer *Fuzzer, pid int) (*Proc, error) {
 	execOptsCover.Flags |= ipc.FlagCollectCover
 	execOptsComps := execOptsNoCollide
 	execOptsComps.Flags |= ipc.FlagCollectComps
+	envs := make([]*ipc.Env, 8)
+	// for _ := range 0..8{
+	for i := 0; i < 8; i++ {
+		env, err := ipc.MakeEnv(fuzzer.config, pid)
+		if err != nil {
+			return nil, err
+		}
+		envs = append(envs, env)
+	}
 	proc := &Proc{
 		fuzzer:            fuzzer,
 		pid:               pid,
 		env:               env,
+		envs: 			   envs,
 		rnd:               rnd,
 		execOpts:          fuzzer.execOpts,
 		execOptsCover:     &execOptsCover,
@@ -140,27 +152,17 @@ func (proc *Proc) loop() {
 //modified by Rrooach
 func (proc *Proc) TasktriageInput(item *WorkTriage) {
 	log.Logf(1, "#%v: triaging type=%x", proc.pid, item.flags)
-	//	wg := sync.WaitGroup{}
-	//	wg.Add(len(item.task))
-	// ch  := make(chan ProgTypes, len(item.task))
+
 	log.Logf(0, "proc:146")
-	//	for _, p := range item.task {
 	log.Logf(0, "proc:148")
 	tempItem := &WorkTriage{
 		p:     item.task[item.pIndex],
 		call:  item.call,
 		info:  item.info,
 		flags: item.flags,
-		// pIndex: item.pIndex,
 	}
 	log.Logf(0, "proc:158")
-	//	go func() {
 	proc.triageInput(tempItem)
-	// wg.Done()
-	// }()
-	// 	log.Logf(0, "proc:159")
-	// }
-	// wg.Wait()
 	log.Logf(0, "proc:163")
 	// for i := 0; i < len(item.task); i++ {
 	// 	log.Logf(0, "proc:165")
@@ -366,38 +368,48 @@ func (proc *Proc) executeHintSeed(p *prog.Prog, call int) {
 	})
 }
 
+
+
 //modified by Rrooach
+type newlist []*ipc.ProgInfo
+func (I newlist) Len() int {
+	return len(I)
+}
+func (I newlist) Less(i, j int) bool {
+	return I[i].Idx < I[j].Idx
+}
+func (I newlist) Swap(i, j int) {
+	I[i], I[j] = I[j], I[i]
+}
+
 func (proc *Proc) Taskexecute(execOpts *ipc.ExecOpts, task []*prog.Prog, flags ProgTypes, stat Stat) []*ipc.ProgInfo {
 	var infos []*ipc.ProgInfo
 	log.Logf(0, "proc:410")
 	ch := make(chan *ipc.ProgInfo, len(task))
-	wg := sync.WaitGroup{}
-	log.Logf(0, "proc:413 %v", task)
-	for _, p := range task {
-		log.Logf(0, "proc:415")
-		wg.Add(1)
-		log.Logf(0, "proc:416")
-		go func() {
-			proc.TaskexecuteRaw(execOpts, p, stat, ch)
+	wg := sync.WaitGroup{} 
+	for i, p := range task { 
+		taskI := i 
+		taskP := p 
+		wg.Add(1) 
+		go func() { 
+			log.Logf(0, "proc:392 %v", taskI)	
+			proc.TaskexecuteRaw(execOpts, taskP, stat, ch, taskI)
 			wg.Done()
-		}()
-		log.Logf(0, "proc:418")
-	}
-	log.Logf(0, "proc:421")
-	wg.Wait()
-	log.Logf(0, "proc:423")
-	cnt := 0
+		}() 
+	} 
+	wg.Wait()  
 	for i := 0; i < len(task); i++ {
 		info := <-ch
-		infos = append(infos, info)
-
-		log.Logf(0, "proc:431 cnt=%v", cnt)
-		cnt++
+		infos = append(infos, info) 
 	} 
+	sort.Sort(newlist(infos)) 
 	log.Logf(0, "##########################\nproc:427")
-	for j, p := range task {
-		log.Logf(0, "proc:430 %v, %v", p, infos[j])
-		calls, extra := proc.fuzzer.checkNewSignal(p, infos[j])
+	for j, p := range task { 
+		if int(infos[j].Idx) != j {
+			log.Logf(0, "prog:\n\n prog = %v \n\n info = %v", p, infos[j])
+			panic("unmatch info and prog:\n\n")
+		}
+ 		calls, extra := proc.fuzzer.checkNewSignal(p, infos[j])
 		log.Logf(0, "proc:432")
 		for _, callIndex := range calls {
 			proc.TaskenqueueCallTriage(task, flags, callIndex, infos[j].Calls[callIndex], j)
@@ -405,8 +417,7 @@ func (proc *Proc) Taskexecute(execOpts *ipc.ExecOpts, task []*prog.Prog, flags P
 		log.Logf(0, "proc:436")
 		if extra {
 			log.Logf(0, "proc:438")
-			proc.TaskenqueueCallTriage(task, flags, -1, infos[j].Extra, j)
-			log.Logf(0, "proc:440")
+			proc.TaskenqueueCallTriage(task, flags, -1, infos[j].Extra, j) 
 		}
 	}
 	return infos
@@ -454,39 +465,48 @@ func (proc *Proc) TaskenqueueCallTriage(task []*prog.Prog, flags ProgTypes, call
 	})
 }
 
-func (proc *Proc) TaskexecuteRaw(opts *ipc.ExecOpts, p *prog.Prog, stat Stat, ch chan *ipc.ProgInfo) {
-	// log.Logf(0, "proc:490")
-	// if opts.Flags&ipc.FlagDedupCover == 0 {
-	// 	log.Fatalf("dedup cover is not enabled")
-	// }
-	// for _, call := range p.Calls {
-	// 	if !proc.fuzzer.choiceTable.Enabled(call.Meta.ID) {
-	// 		fmt.Printf("executing disabled syscall %v", call.Meta.Name)
-	// 		panic("disabled syscall")
-	// 	}
-	// }
-	// log.Logf(0, "proc:500")
-	// // Limit concurrency window and do leak checking once in a while.
-	// ticket := proc.fuzzer.gate.Enter()
-	// defer proc.fuzzer.gate.Leave(ticket)
+func (proc *Proc) TaskexecuteRaw(opts *ipc.ExecOpts, p *prog.Prog, stat Stat, ch chan *ipc.ProgInfo, idx int) {
+	info := proc.executeRawWrapper(opts, p, stat, idx) 
+	info.Idx = uint32(idx) 
+	ch <- info
+}
 
-	// proc.logProgram(opts, p)
-	// for try := 0; ; try++ {
-	// 	atomic.AddUint64(&proc.fuzzer.stats[stat], 1)
-	// 	output, info, hanged, err := proc.env.Exec(opts, p)
-	// 	if err != nil {
-	// 		if try > 10 {
-	// 			log.Fatalf("executor %v failed %v times:\n%v", proc.pid, try, err)
-	// 		}
-	// 		log.Logf(4, "fuzzer detected executor failure='%v', retrying #%d", err, try+1)
-	// 		debug.FreeOSMemory()
-	// 		time.Sleep(time.Second)
-	// 		continue
-	// 	}
-	// 	log.Logf(2, "result hanged=%v: %s", hanged, output)
-	// 	c <- info
-	// }
-	ch <- proc.executeRaw(opts, p, stat)
+func (proc *Proc) executeRawWrapper(opts *ipc.ExecOpts, p *prog.Prog, stat Stat, id int)*ipc.ProgInfo {
+	if opts.Flags&ipc.FlagDedupCover == 0 {
+		log.Fatalf("dedup cover is not enabled")
+	}
+	log.Logf(0, "proc:578")
+	for _, call := range p.Calls {
+		if !proc.fuzzer.choiceTable.Enabled(call.Meta.ID) {
+			fmt.Printf("executing disabled syscall %v", call.Meta.Name)
+			panic("disabled syscall")
+		}
+	}
+	log.Logf(0, "proc:585")
+	// Limit concurrency window and do leak checking once in a while.
+	ticket := proc.fuzzer.gate.Enter()
+	defer proc.fuzzer.gate.Leave(ticket)
+	log.Logf(0, "proc:589")
+	proc.logProgram(opts, p)
+	log.Logf(0, "proc:591")
+	for try := 0; ; try++ {
+		atomic.AddUint64(&proc.fuzzer.stats[stat], 1)
+		log.Logf(0, "proc:594")
+		output, info, hanged, err := proc.envs[id].Exec(opts, p)
+		log.Logf(0, "proc:596")
+		if err != nil {
+			if try > 10 {
+				log.Fatalf("executor %v failed %v times:\n%v", proc.pid, try, err)
+			}
+			log.Logf(4, "fuzzer detected executor failure='%v', retrying #%d", err, try+1)
+			debug.FreeOSMemory()
+			time.Sleep(time.Second)
+			continue
+		} 
+		log.Logf(2, "result hanged=%v: %s", hanged, output)
+		log.Logf(0, "proc:607")
+		return info
+	}
 }
 
 func (proc *Proc) executeRaw(opts *ipc.ExecOpts, p *prog.Prog, stat Stat) *ipc.ProgInfo {
@@ -520,7 +540,7 @@ func (proc *Proc) executeRaw(opts *ipc.ExecOpts, p *prog.Prog, stat Stat) *ipc.P
 			debug.FreeOSMemory()
 			time.Sleep(time.Second)
 			continue
-		}
+		} 
 		log.Logf(2, "result hanged=%v: %s", hanged, output)
 		log.Logf(0, "proc:607")
 		return info

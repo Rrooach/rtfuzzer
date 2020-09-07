@@ -498,16 +498,13 @@ func (fuzzer *Fuzzer) corpusSignalDiff(sign signal.Signal) signal.Signal {
 
 func (fuzzer *Fuzzer) checkNewSignal(p *prog.Prog, info *ipc.ProgInfo) (calls []int, extra bool) {
 	fuzzer.signalMu.RLock()
-	defer fuzzer.signalMu.RUnlock()
-	log.Logf(0, "fuzzer:502")
-	for i, inf := range info.Calls {
+	defer fuzzer.signalMu.RUnlock() 
+	for i, inf := range info.Calls { 
 		if fuzzer.checkNewCallSignal(p, &inf, i) {
 			calls = append(calls, i)
-		}
-	}
-	log.Logf(0, "fuzzer:508")
-	extra = fuzzer.checkNewCallSignal(p, &info.Extra, -1)
-	log.Logf(0, "fuzzer:510")
+		} 
+	} 
+	extra = fuzzer.checkNewCallSignal(p, &info.Extra, -1) 
 	return
 }
 

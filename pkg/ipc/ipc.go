@@ -15,11 +15,13 @@ import (
 	"sync/atomic"
 	"time"
 	"unsafe"
-
+	"syscall"
+ 
 	"github.com/google/syzkaller/pkg/cover"
 	"github.com/google/syzkaller/pkg/osutil"
 	"github.com/google/syzkaller/pkg/signal"
 	"github.com/google/syzkaller/prog"
+	"github.com/google/syzkaller/pkg/log"
 	"github.com/google/syzkaller/sys/targets"
 )
 
@@ -95,8 +97,9 @@ type CallInfo struct {
 }
 
 type ProgInfo struct {
-	Calls []CallInfo
-	Extra CallInfo // stores Signal and Cover collected from background threads
+	Idx    uint32
+	Calls  []CallInfo
+	Extra  CallInfo // stores Signal and Cover collected from background threads
 }
 
 type Env struct {
@@ -250,6 +253,7 @@ var rateLimit = time.NewTicker(1 * time.Second)
 // err0: failed to start the process or bug in executor itself.
 func (env *Env) Exec(opts *ExecOpts, p *prog.Prog) (output []byte, info *ProgInfo, hanged bool, err0 error) {
 	// Copy-in serialized program.
+	log.Logf(0, "%v, %v", p, env)
 	progSize, err := p.SerializeForExec(env.in)
 	if err != nil {
 		err0 = fmt.Errorf("failed to serialize: %v", err)
@@ -279,6 +283,8 @@ func (env *Env) Exec(opts *ExecOpts, p *prog.Prog) (output []byte, info *ProgInf
 			return
 		}
 	}
+
+	syscall.Setpriority(syscall.PRIO_PROCESS, env.pid, int(p.Prio))
 	output, hanged, err0 = env.cmd.exec(opts, progData)
 	if err0 != nil {
 		env.cmd.close()
