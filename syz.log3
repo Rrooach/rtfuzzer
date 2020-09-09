@@ -640,3 +640,53 @@ Welcome to [1mDebian GNU/Linux 9 (stretch)[0m!
 
 Debian GNU/Linux 9 syzkaller ttyS0
 
+OpenSSH_8.2p1 Ubuntu-4ubuntu0.1, OpenSSL 1.1.1f  31 Mar 2020
+debug1: Reading configuration data /dev/null
+debug1: Connecting to localhost [::1] port 1569.
+debug1: connect to address ::1 port 1569: Connection refused
+debug1: Connecting to localhost [127.0.0.1] port 1569.
+debug1: fd 3 clearing O_NONBLOCK
+debug1: Connection established.
+debug1: identity file /root/image3/stretch.id_rsa type 0
+debug1: identity file /root/image3/stretch.id_rsa-cert type -1
+debug1: Local version string SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.1
+debug1: Remote protocol version 2.0, remote software version OpenSSH_7.4p1 Debian-10+deb9u7
+debug1: match: OpenSSH_7.4p1 Debian-10+deb9u7 pat OpenSSH_7.0*,OpenSSH_7.1*,OpenSSH_7.2*,OpenSSH_7.3*,OpenSSH_7.4*,OpenSSH_7.5*,OpenSSH_7.6*,OpenSSH_7.7* compat 0x04000002
+debug1: Authenticating to localhost:1569 as 'root'
+debug1: SSH2_MSG_KEXINIT sent
+debug1: SSH2_MSG_KEXINIT received
+debug1: kex: algorithm: curve25519-sha256
+debug1: kex: host key algorithm: ecdsa-sha2-nistp256
+debug1: kex: server->client cipher: chacha20-poly1305@openssh.com MAC: <implicit> compression: none
+debug1: kex: client->server cipher: chacha20-poly1305@openssh.com MAC: <implicit> compression: none
+debug1: expecting SSH2_MSG_KEX_ECDH_REPLY
+debug1: Server host key: ecdsa-sha2-nistp256 SHA256:JMQC0g6v8vQqeP56TBA3dDmhMfjsSbZl0dSkAcXYhlM
+debug1: checking without port identifier
+Warning: Permanently added '[localhost]:1569' (ECDSA) to the list of known hosts.
+debug1: rekey out after 134217728 blocks
+debug1: SSH2_MSG_NEWKEYS sent
+debug1: expecting SSH2_MSG_NEWKEYS
+debug1: SSH2_MSG_NEWKEYS received
+debug1: rekey in after 134217728 blocks
+debug1: Will attempt key: /root/image3/stretch.id_rsa RSA SHA256:vOliI0gsz2XNhd3unx1f0Mg2Es5ts54879DZDswtduk explicit
+debug1: SSH2_MSG_EXT_INFO received
+debug1: kex_input_ext_info: server-sig-algs=<ssh-ed25519,ssh-rsa,ssh-dss,ecdsa-sha2-nistp256,ecdsa-sha2-nistp384,ecdsa-sha2-nistp521>
+debug1: SSH2_MSG_SERVICE_ACCEPT received
+debug1: Authentications that can continue: publickey,password
+debug1: Next authentication method: publickey
+debug1: Offering public key: /root/image3/stretch.id_rsa RSA SHA256:vOliI0gsz2XNhd3unx1f0Mg2Es5ts54879DZDswtduk explicit
+debug1: Server accepts key: /root/image3/stretch.id_rsa RSA SHA256:vOliI0gsz2XNhd3unx1f0Mg2Es5ts54879DZDswtduk explicit
+debug1: Authentication succeeded (publickey).
+Authenticated to localhost ([127.0.0.1]:1569).
+debug1: channel 0: new [client-session]
+debug1: Requesting no-more-sessions@openssh.com
+debug1: Entering interactive session.
+debug1: pledge: network
+debug1: client_input_global_request: rtype hostkeys-00@openssh.com want_reply 0
+debug1: Sending command: cd / && /syz-fuzzer -executor=/syz-executor -name=vm-0 -arch=amd64 -manager=10.0.2.10:36299 -sandbox=none -procs=1 -cover=true -debug=true -test=false -vv=100
+2020/09/07 13:03:53 fuzzer started
+2020/09/07 13:03:53 dialing manager at 10.0.2.10:36299
+2020/09/07 13:03:53 connecting to manager...
+2020/09/07 13:03:53 checking machine...
+2020/09/07 13:03:53 checking revisions...
+2020/09/07 13:03:53 testing simple program...

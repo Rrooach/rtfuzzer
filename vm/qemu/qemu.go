@@ -446,7 +446,7 @@ func (inst *instance) boot() error {
 		tee = os.Stdout
 	}
 	inst.merger = vmimpl.NewOutputMerger(tee)
-	inst.merger.Add("qemu", inst.rpipe)
+	// inst.merger.Add("qemu", inst.rpipe)
 	inst.rpipe = nil
 
 	var bootOutput []byte

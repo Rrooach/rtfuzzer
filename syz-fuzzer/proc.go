@@ -49,10 +49,9 @@ func newProc(fuzzer *Fuzzer, pid int) (*Proc, error) {
 	execOptsCover.Flags |= ipc.FlagCollectCover
 	execOptsComps := execOptsNoCollide
 	execOptsComps.Flags |= ipc.FlagCollectComps
-	envs := make([]*ipc.Env, 8)
-	// for _ := range 0..8{
-	for i := 0; i < 8; i++ {
-		env, err := ipc.MakeEnv(fuzzer.config, pid)
+	envs := make([]*ipc.Env, 0, 8) 
+	for i := 1; i < 9; i++ {
+		env, err := ipc.MakeEnv(fuzzer.config, pid + i)
 		if err != nil {
 			return nil, err
 		}

@@ -259,15 +259,13 @@ func main() {
 	fuzzer.choiceTable = target.BuildChoiceTable(fuzzer.corpus, calls)
 
 	for pid := 0; pid < *flagProcs; pid++ {
-		proc, err := newProc(fuzzer, pid)
+		proc, err := newProc(fuzzer, pid + 1024*pid)
 		if err != nil {
 			log.Fatalf("failed to create proc: %v", err)
 		}
 		fuzzer.procs = append(fuzzer.procs, proc)
 		go proc.loop()
-	}
-	log.Logf(0, "----------------------------")
-	log.Logf(0, "fuzzer:271")
+	} 
 	fuzzer.pollLoop()
 }
 
