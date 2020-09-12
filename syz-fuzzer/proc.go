@@ -14,7 +14,7 @@ import (
 	"syscall"
 	"sort"
 	"time"
-
+	"github.com/yourbasic/bit"
 	"github.com/google/syzkaller/pkg/cover"
 	"github.com/google/syzkaller/pkg/hash"
 	"github.com/google/syzkaller/pkg/ipc"
@@ -35,9 +35,18 @@ type Proc struct {
 	execOptsCover     *ipc.ExecOpts
 	execOptsComps     *ipc.ExecOpts
 	execOptsNoCollide *ipc.ExecOpts
+	set 			  bit.Set 
 }
 
 func newProc(fuzzer *Fuzzer, pid int) (*Proc, error) {
+	set := bit.New()
+	for ; ; {
+		if !set.Contains(pid) {
+			set.Add(pid)
+			break
+		}
+		pid++
+	} 
 	env, err := ipc.MakeEnv(fuzzer.config, pid)
 	if err != nil {
 		return nil, err
@@ -51,7 +60,15 @@ func newProc(fuzzer *Fuzzer, pid int) (*Proc, error) {
 	execOptsComps.Flags |= ipc.FlagCollectComps
 	envs := make([]*ipc.Env, 0, 8) 
 	for i := 1; i < 9; i++ {
-		env, err := ipc.MakeEnv(fuzzer.config, pid + i)
+		ProcPid := pid + i
+		for ; ; { 
+			if !set.Contains(ProcPid) {
+				set.Add(ProcPid)
+				break
+			}
+			ProcPid++
+		} 
+		env, err := ipc.MakeEnv(fuzzer.config, ProcPid)
 		if err != nil {
 			return nil, err
 		}
@@ -67,6 +84,7 @@ func newProc(fuzzer *Fuzzer, pid int) (*Proc, error) {
 		execOptsCover:     &execOptsCover,
 		execOptsComps:     &execOptsComps,
 		execOptsNoCollide: &execOptsNoCollide,
+		set: 			   *set,
 	}
 	return proc, nil
 }
@@ -404,6 +422,12 @@ func (proc *Proc) Taskexecute(execOpts *ipc.ExecOpts, task []*prog.Prog, flags P
 	sort.Sort(newlist(infos)) 
 	log.Logf(0, "##########################\nproc:427")
 	for j, p := range task { 
+		/*
+			skip those seed that is not important
+			if task.stall {
+				continue
+			} 
+		*/
 		if int(infos[j].Idx) != j {
 			log.Logf(0, "prog:\n\n prog = %v \n\n info = %v", p, infos[j])
 			panic("unmatch info and prog:\n\n")
@@ -491,7 +515,13 @@ func (proc *Proc) executeRawWrapper(opts *ipc.ExecOpts, p *prog.Prog, stat Stat,
 	for try := 0; ; try++ {
 		atomic.AddUint64(&proc.fuzzer.stats[stat], 1)
 		log.Logf(0, "proc:594")
+		// output, info, hanged, err, sig := proc.envs[id].Exec(opts, p)
 		output, info, hanged, err := proc.envs[id].Exec(opts, p)
+		//modified by Rrooach
+		/*
+		try to get some signal, if 
+
+		*/
 		log.Logf(0, "proc:596")
 		if err != nil {
 			if try > 10 {

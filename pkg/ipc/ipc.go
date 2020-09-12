@@ -15,7 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 	"unsafe"
-	"syscall"
+	"syscall"  
  
 	"github.com/google/syzkaller/pkg/cover"
 	"github.com/google/syzkaller/pkg/log"
@@ -284,7 +284,8 @@ func (env *Env) Exec(opts *ExecOpts, p *prog.Prog) (output []byte, info *ProgInf
 	}
 
 	syscall.Setpriority(syscall.PRIO_PROCESS, env.cmd.cmd.Process.Pid, int(p.Prio))
-	output, hanged, err0 = env.cmd.exec(opts, progData)
+	output, hanged, err0  = env.cmd.exec(opts, progData)
+	// output, hanged, err0 = env.cmd.exec(opts, progData)
 	if err0 != nil {
 		env.cmd.close()
 		env.cmd = nil
@@ -739,9 +740,23 @@ func (c *command) exec(opts *ExecOpts, progData []byte) (output []byte, hanged b
 			output = <-c.readDone
 			err0 = fmt.Errorf("executor %v: failed to write control pipe: %v", c.pid, err)
 			return
-		}
+		} 
 	}
 	// At this point program is executing.
+	// pidStr := strconv.Itoa(c.pid)
+	// command := "cat /proc/" + pidStr + "/status | grep State"
+	// cmd := exec.Command("/bin/bash", "-c", command)
+	// bytes,err := cmd.Output()
+	// if err != nil {
+	// 	log.Logf(0, "error")
+	// }
+	// resp := string(bytes)
+	// log.Logf(0, "======== %v=============", resp)
+	// if strings.Contains(resp, "R") {
+	// 	log.Logf(0, "=========yes!--------")
+	// } else {
+	// 	log.Logf(0, "==========no!===========")
+	// }
 
 	done := make(chan bool)
 	hang := make(chan bool)

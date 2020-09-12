@@ -6,6 +6,7 @@ package prog
 import (
 	"math/rand"
 	"time"
+	"github.com/google/syzkaller/pkg/log"
 )
 
 // Generate generates a random program with ncalls calls.
@@ -36,6 +37,40 @@ func (target *Target) Generate(rs rand.Source, ncalls int, ct *ChoiceTable) *Pro
 }
 
 //modified by Rrooach
+// func initMap(mmp map[string]int) {
+// 	mmp = make(map[string]int)
+// 	mmp["open"] = 1
+// 	mmp["close"] = -1
+
+// }
+
+// func CheckMatch(callName string) int {
+
+// }
+
+// func TaskStateUpdate(task []*Prog, len int, ncalls int) []*Prog {
+// 	CheckMatchNum := 0
+// 	var callToidx map[string]int
+// 	callToidx = initMap(callToidx)
+// 	for _, prog := range task {
+// 		for _, call := range prog.Calls {
+// 			isExist := CheckMatch(call.Meta.CallName)
+// 			if isExist == 1
+// 				CheckMatchNum = CheckMatchNum | (1 << callToidx[call.Meta.CallName])
+// 			if isExist == -1
+// 				CheckMatchNum = CheckMatchNum ^ (1 << callToidx[call.Meta.CallName])
+// 		}
+// 		for i := 0; i < CheckMatchNum; i++ {
+// 			tmp := 1<<i
+// 			if tmp ^ CheckMatchNum == 1 {
+// 				if len(p.Calls) < ncalls {
+// 					generateCall()
+// 				} 
+// 			}
+// 		}
+// 	}
+// }
+
 func (target *Target) TaskGenerate(rs rand.Source, ncalls int, ct *ChoiceTable) []*Prog {
 	var ProgList []*Prog
 	rand.Seed(time.Now().Unix())
@@ -54,6 +89,7 @@ func (target *Target) TaskGenerate(rs rand.Source, ncalls int, ct *ChoiceTable) 
 			calls := r.generateCall(s, p, len(p.Calls))
 			for _, c := range calls {
 				s.analyze(c)
+				log.Logf(0, "======calls = %v", c)
 				p.Calls = append(p.Calls, c)
 			}
 		}
@@ -69,5 +105,6 @@ func (target *Target) TaskGenerate(rs rand.Source, ncalls int, ct *ChoiceTable) 
 		ProgList = append(ProgList, p)
 	}
 	
+	// ProgList = TaskStateUpdate(ProgList, ListLen, ncalls)
 	return ProgList
 }

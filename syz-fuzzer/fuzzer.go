@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
+
 	"github.com/google/syzkaller/pkg/csource"
 	"github.com/google/syzkaller/pkg/hash"
 	"github.com/google/syzkaller/pkg/host"
@@ -57,9 +58,9 @@ type Fuzzer struct {
 	signalMu     sync.RWMutex
 	corpusSignal signal.Signal // signal of inputs in corpus
 	maxSignal    signal.Signal // max signal ever observed including flakes
-	newSignal    signal.Signal // diff of maxSignal since last sync with master
-
+	newSignal    signal.Signal // diff of maxSignal since last sync with master 
 	logMu sync.Mutex
+
 }
 
 type FuzzerSnapshot struct {
@@ -230,8 +231,7 @@ func main() {
 	if *flagRunTest {
 		runTest(target, manager, *flagName, config.Executor)
 		return
-	}
-
+	} 
 	needPoll := make(chan struct{}, 1)
 	needPoll <- struct{}{}
 	fuzzer := &Fuzzer{
@@ -245,7 +245,7 @@ func main() {
 		target:                   target,
 		faultInjectionEnabled:    r.CheckResult.Features[host.FeatureFault].Enabled,
 		comparisonTracingEnabled: r.CheckResult.Features[host.FeatureComparisons].Enabled,
-		corpusHashes:             make(map[hash.Sig]struct{}),
+		corpusHashes:             make(map[hash.Sig]struct{}), 		  
 	}
 	gateCallback := fuzzer.useBugFrames(r, *flagProcs)
 	fuzzer.gate = ipc.NewGate(2**flagProcs, gateCallback)
@@ -259,12 +259,14 @@ func main() {
 	fuzzer.choiceTable = target.BuildChoiceTable(fuzzer.corpus, calls)
 
 	for pid := 0; pid < *flagProcs; pid++ {
-		proc, err := newProc(fuzzer, pid + 1024*pid)
+		procPid := pid+1024*pid  
+		proc, err := newProc(fuzzer, procPid)
 		if err != nil {
 			log.Fatalf("failed to create proc: %v", err)
 		}
 		fuzzer.procs = append(fuzzer.procs, proc)
 		go proc.loop()
+		// set.Delete(procPid)
 	} 
 	fuzzer.pollLoop()
 }
