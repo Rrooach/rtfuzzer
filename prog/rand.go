@@ -534,6 +534,29 @@ func (r *randGen) generateCall(s *state, p *Prog, insertionPoint int) []*Call {
 	return r.generateParticularCall(s, meta)
 }
 
+//modified by Rrooach
+func (r *randGen) TaskgenerateParticularCall(s *state, CallName string) (call *Call) {
+	var idx int
+	for i, syscall := range r.target.Syscalls {
+		if CallName == syscall.CallName {
+			idx = i
+		}
+	}
+	
+	meta := r.target.Syscalls[idx]
+
+	if meta.Attrs.Disabled {
+		panic(fmt.Sprintf("generating disabled call %v", meta.Name))
+	}
+	c := &Call{
+		Meta: meta,
+		Ret:  MakeReturnArg(meta.Ret),
+	}
+	c.Args, _ = r.generateArgs(s, meta.Args, DirIn)
+	r.target.assignSizesCall(c)
+	return c
+}
+
 func (r *randGen) generateParticularCall(s *state, meta *Syscall) (calls []*Call) {
 	if meta.Attrs.Disabled {
 		panic(fmt.Sprintf("generating disabled call %v", meta.Name))

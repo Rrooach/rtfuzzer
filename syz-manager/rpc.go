@@ -236,7 +236,8 @@ func (serv *RPCServer) NewInput(a *rpctype.NewInputArgs, r *int) error {
 		f.rotatedSignal.Merge(inputSignal)
 	}
 	serv.corpusCover.Merge(a.Cover)
-	serv.stats.corpusCover.set(len(serv.corpusCover))
+	serv.stats.corpusCover.set(len(serv.corpusCover)) 
+	
 	serv.stats.newInputs.inc()
 	if rotated {
 		serv.stats.rotatedInputs.inc()

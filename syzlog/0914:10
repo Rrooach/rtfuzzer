@@ -1,0 +1,44 @@
+2020/09/14 02:28:47 loading corpus...
+2020/09/14 02:28:47 serving http on http://127.0.0.1:56749
+2020/09/14 02:28:47 serving rpc on tcp://[::]:39081
+2020/09/14 02:28:47 booting test machines...
+2020/09/14 02:28:47 wait for the connection from test machine...
+2020/09/14 02:28:59 machine check:
+2020/09/14 02:28:59 syscalls                : 2030/3698
+2020/09/14 02:28:59 code coverage           : enabled
+2020/09/14 02:28:59 comparison tracing      : enabled
+2020/09/14 02:28:59 extra coverage          : enabled
+2020/09/14 02:28:59 setuid sandbox          : enabled
+2020/09/14 02:28:59 namespace sandbox       : /proc/self/ns/user does not exist
+2020/09/14 02:28:59 Android sandbox         : enabled
+2020/09/14 02:28:59 fault injection         : CONFIG_FAULT_INJECTION is not enabled
+2020/09/14 02:28:59 leak checking           : CONFIG_DEBUG_KMEMLEAK is not enabled
+2020/09/14 02:28:59 net packet injection    : /dev/net/tun does not exist
+2020/09/14 02:28:59 net device setup        : enabled
+2020/09/14 02:28:59 concurrency sanitizer   : /sys/kernel/debug/kcsan does not exist
+2020/09/14 02:28:59 devlink PCI setup       : PCI device 0000:00:10.0 is not available
+2020/09/14 02:28:59 USB emulation           : /dev/raw-gadget does not exist
+2020/09/14 02:28:59 hci packet injection    : /dev/vhci does not exist
+2020/09/14 02:28:59 corpus                  : 17 (deleted 0 broken)
+2020/09/14 02:29:07 VMs 1, executed 140, corpus cover 266, corpus signal 149, max signal 9718, crashes 0, repro 0
+2020/09/14 02:29:18 VMs 2, executed 141, corpus cover 2862, corpus signal 2670, max signal 13752, crashes 0, repro 0
+2020/09/14 02:29:28 VMs 2, executed 2007, corpus cover 6220, corpus signal 6198, max signal 13752, crashes 0, repro 0
+2020/09/14 02:29:28 vm-1: crash: lost connection to test machine
+2020/09/14 02:29:30 vm-2: running for 521.755µs, restarting
+2020/09/14 02:29:36 vm-3: running for 492.243µs, restarting
+2020/09/14 02:29:37 vm-0: crash: lost connection to test machine
+2020/09/14 02:29:38 VMs 0, executed 2007, corpus cover 6220, corpus signal 6198, max signal 13752, crashes 2, repro 1
+2020/09/14 02:29:38 reproducing crash 'no output/lost connection': 22 programs, 4 VMs, timeouts [15s 6m0s]
+2020/09/14 02:29:51 VMs 0, executed 2007, corpus cover 6220, corpus signal 6198, max signal 13752, crashes 2, repro 1
+2020/09/14 02:30:01 VMs 0, executed 2007, corpus cover 6220, corpus signal 6198, max signal 13752, crashes 2, repro 1
+2020/09/14 02:30:12 VMs 0, executed 2007, corpus cover 6220, corpus signal 6198, max signal 13752, crashes 2, repro 1
+2020/09/14 02:30:22 VMs 0, executed 2007, corpus cover 6220, corpus signal 6198, max signal 13752, crashes 2, repro 1
+2020/09/14 02:30:32 VMs 0, executed 2007, corpus cover 6220, corpus signal 6198, max signal 13752, crashes 2, repro 1
+2020/09/14 02:30:42 VMs 0, executed 2007, corpus cover 6220, corpus signal 6198, max signal 13752, crashes 2, repro 1
+2020/09/14 02:30:52 VMs 0, executed 2007, corpus cover 6220, corpus signal 6198, max signal 13752, crashes 2, repro 1
+2020/09/14 02:31:03 VMs 0, executed 2007, corpus cover 6220, corpus signal 6198, max signal 13752, crashes 2, repro 1
+SIGINT: shutting down...
+2020/09/14 02:31:10 reproducing crash 'no output/lost connection': failed to init instance: failed to create VM: shutdown in progress
+2020/09/14 02:31:11 reproducing crash 'no output/lost connection': failed to init instance: failed to create VM: shutdown in progress
+2020/09/14 02:31:13 VMs 0, executed 2007, corpus cover 6220, corpus signal 6198, max signal 13752, crashes 2, repro 1
+2020/09/14 02:31:21 repro failed: all VMs failed to boot

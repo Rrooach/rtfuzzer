@@ -16,6 +16,7 @@ import (
 	"time"
 	"unsafe"
 	"syscall"  
+	// "strconv"
  
 	"github.com/google/syzkaller/pkg/cover"
 	"github.com/google/syzkaller/pkg/log"
@@ -251,6 +252,60 @@ var rateLimit = time.NewTicker(1 * time.Second)
 // info: per-call info
 // hanged: program hanged and was killed
 // err0: failed to start the process or bug in executor itself.
+
+//modified by Rrooach
+func (env *Env) TaskExec(opts *ExecOpts, p *prog.Prog) (output []byte, info *ProgInfo, hanged bool, err0 error, rt_sig int) {
+	// Copy-in serialized program.
+	progSize, err := p.SerializeForExec(env.in)
+	if err != nil {
+		err0 = fmt.Errorf("failed to serialize: %v", err)
+		return
+	}
+	var progData []byte
+	if !env.config.UseShmem {
+		progData = env.in[:progSize]
+	}
+	// Zero out the first two words (ncmd and nsig), so that we don't have garbage there
+	// if executor crashes before writing non-garbage there.
+	for i := 0; i < 4; i++ {
+		env.out[i] = 0
+	}
+
+	atomic.AddUint64(&env.StatExecs, 1)
+	if env.cmd == nil {
+		if p.Target.OS != "test" && targets.Get(p.Target.OS, p.Target.Arch).HostFuzzer {
+			// The executor is actually ssh,
+			// starting them too frequently leads to timeouts.
+			<-rateLimit.C
+		}
+		tmpDirPath := "./"
+		atomic.AddUint64(&env.StatRestarts, 1)
+		env.cmd, err0 = makeCommand(env.pid, env.bin, env.config, env.inFile, env.outFile, env.out, tmpDirPath)
+		if err0 != nil {
+			return
+		}
+	}
+
+	syscall.Setpriority(syscall.PRIO_PROCESS, env.cmd.cmd.Process.Pid, int(p.Prio))
+	output, hanged, err0, rt_sig = env.cmd.exec(opts, progData)
+	if err0 != nil {
+		env.cmd.close()
+		env.cmd = nil
+		return
+	}
+
+	info, err0 = env.parseOutput(p)
+	if info != nil && env.config.Flags&FlagSignal == 0 {
+		addFallbackSignal(p, info)
+	}
+	if !env.config.UseForkServer {
+		env.cmd.close()
+		env.cmd = nil
+	}
+	return
+}
+
+
 func (env *Env) Exec(opts *ExecOpts, p *prog.Prog) (output []byte, info *ProgInfo, hanged bool, err0 error) {
 	// Copy-in serialized program.
 	progSize, err := p.SerializeForExec(env.in)
@@ -284,8 +339,7 @@ func (env *Env) Exec(opts *ExecOpts, p *prog.Prog) (output []byte, info *ProgInf
 	}
 
 	syscall.Setpriority(syscall.PRIO_PROCESS, env.cmd.cmd.Process.Pid, int(p.Prio))
-	output, hanged, err0  = env.cmd.exec(opts, progData)
-	// output, hanged, err0 = env.cmd.exec(opts, progData)
+	output, hanged, err0, _ = env.cmd.exec(opts, progData)
 	if err0 != nil {
 		env.cmd.close()
 		env.cmd = nil
@@ -719,7 +773,7 @@ func (c *command) wait() error {
 	return err
 }
 
-func (c *command) exec(opts *ExecOpts, progData []byte) (output []byte, hanged bool, err0 error) {
+func (c *command) exec(opts *ExecOpts, progData []byte) (output []byte, hanged bool, err0 error, rt_sig int) {
 	req := &executeReq{
 		magic:     inMagic,
 		envFlags:  uint64(c.config.Flags),
@@ -743,19 +797,27 @@ func (c *command) exec(opts *ExecOpts, progData []byte) (output []byte, hanged b
 		} 
 	}
 	// At this point program is executing.
-	// pidStr := strconv.Itoa(c.pid)
-	// command := "cat /proc/" + pidStr + "/status | grep State"
-	// cmd := exec.Command("/bin/bash", "-c", command)
-	// bytes,err := cmd.Output()
-	// if err != nil {
-	// 	log.Logf(0, "error")
-	// }
-	// resp := string(bytes)
-	// log.Logf(0, "======== %v=============", resp)
-	// if strings.Contains(resp, "R") {
-	// 	log.Logf(0, "=========yes!--------")
-	// } else {
-	// 	log.Logf(0, "==========no!===========")
+
+
+	// var rt_sig int
+	// for i := 0; i < 100; i++ {
+	// 	time.Sleep(2)
+	// 	pidStr := strconv.Itoa(c.cmd.Process.Pid)
+	// 	command := "cat /proc/" + pidStr + "/status | grep State"
+	// 	cmd := exec.Command("/bin/bash", "-c", command)
+	// 	bytes,err := cmd.Output()
+	// 	if err != nil {
+	// 		log.Logf(0, "error")
+	// 	}
+	// 	resp := string(bytes)
+	// 	log.Logf(0, "======== %v=============", resp)
+	// 	if strings.Contains(resp, "R") {
+	// 		rt_sig = 0
+	// 		log.Logf(0, "=========yes!--------")
+	// 	} else {
+	// 		rt_sig = 1
+	// 		log.Logf(0, "==========no!===========")
+	// 	}
 	// }
 
 	done := make(chan bool)

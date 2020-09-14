@@ -17,7 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
-
+	"github.com/yourbasic/bit"
 	"github.com/google/syzkaller/pkg/csource"
 	"github.com/google/syzkaller/pkg/hash"
 	"github.com/google/syzkaller/pkg/host"
@@ -59,7 +59,10 @@ type Fuzzer struct {
 	corpusSignal signal.Signal // signal of inputs in corpus
 	maxSignal    signal.Signal // max signal ever observed including flakes
 	newSignal    signal.Signal // diff of maxSignal since last sync with master 
-	logMu sync.Mutex
+	logMu        sync.Mutex
+
+	set 	     bit.Set 
+	setMu        sync.Mutex
 
 }
 
@@ -462,6 +465,19 @@ func (fuzzer *Fuzzer) addInputToCorpus(p *prog.Prog, sign signal.Signal, sig has
 		fuzzer.maxSignal.Merge(sign)
 		fuzzer.signalMu.Unlock()
 	}
+}
+
+func (fuzzer *Fuzzer) nextPid(pid  int) int{
+	fuzzer.setMu.Lock()
+	for ; ; {
+		if !fuzzer.set.Contains(pid) {
+			fuzzer.set.Add(pid)
+			break
+		}
+		pid++
+	} 
+    fuzzer.setMu.Unlock()
+    return pid
 }
 
 func (fuzzer *Fuzzer) snapshot() FuzzerSnapshot {
