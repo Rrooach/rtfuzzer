@@ -208,6 +208,7 @@ func (serv *RPCServer) Check(a *rpctype.CheckArgs, r *int) error {
 }
 
 func (serv *RPCServer) NewInput(a *rpctype.NewInputArgs, r *int) error {
+	// log.Logf(0, "======rpc:  cover = %v", len(a.Cover))
 	inputSignal := a.Signal.Deserialize()
 	log.Logf(4, "new input from %v for syscall %v (signal=%v, cover=%v)",
 		a.Name, a.Call, inputSignal.Len(), len(a.Cover))
@@ -220,7 +221,7 @@ func (serv *RPCServer) NewInput(a *rpctype.NewInputArgs, r *int) error {
 	defer serv.mu.Unlock()
 
 	f := serv.fuzzers[a.Name]
-	genuine := !serv.corpusSignal.Diff(inputSignal).Empty()
+	genuine := !serv.corpusSignal.Diff(inputSignal).Empty() 
 	rotated := false
 	if !genuine && f.rotatedSignal != nil {
 		rotated = !f.rotatedSignal.Diff(inputSignal).Empty()
@@ -235,9 +236,8 @@ func (serv *RPCServer) NewInput(a *rpctype.NewInputArgs, r *int) error {
 	if f.rotatedSignal != nil {
 		f.rotatedSignal.Merge(inputSignal)
 	}
-	serv.corpusCover.Merge(a.Cover)
+	serv.corpusCover.Merge(a.Cover) 
 	serv.stats.corpusCover.set(len(serv.corpusCover)) 
-	
 	serv.stats.newInputs.inc()
 	if rotated {
 		serv.stats.rotatedInputs.inc()
@@ -255,6 +255,7 @@ func (serv *RPCServer) NewInput(a *rpctype.NewInputArgs, r *int) error {
 			other.inputs = append(other.inputs, a.RPCInput)
 		}
 	}
+	// log.Logf(0, "=========== manager: rpc:259 cover = %v, signal = %v", serv.stats.corpusCover, serv.stats.corpusSignal)
 	return nil
 }
 

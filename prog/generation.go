@@ -139,8 +139,8 @@ func (target *Target) TaskGenerate(rs rand.Source, ncalls int, ct *ChoiceTable) 
 		p.debugValidate()
 		ProgList = append(ProgList, p)
 	}
-	r := newRand(target, rs)
-	s := newState(target, ct, nil)
-	ProgList = TaskStateUpdate(ProgList, ncalls, r, s)
+	// r := newRand(target, rs)
+	// s := newState(target, ct, nil)
+	// ProgList = TaskStateUpdate(ProgList, ncalls, r, s)
 	return ProgList
 }

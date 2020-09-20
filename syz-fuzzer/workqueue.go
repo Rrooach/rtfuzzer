@@ -7,7 +7,7 @@ import (
 	"sync"
 
 	"github.com/google/syzkaller/pkg/ipc"
-	"github.com/google/syzkaller/prog"
+	"github.com/google/syzkaller/prog" 
 )
 
 // WorkQueue holds global non-fuzzing work items (see the Work* structs below).
@@ -79,7 +79,7 @@ func (wq *WorkQueue) enqueue(item interface{}) {
 	wq.mu.Lock()
 	defer wq.mu.Unlock()
 	switch item := item.(type) {
-	case *WorkTriage:
+	case *WorkTriage: 
 		if item.flags&ProgCandidate != 0 {
 			wq.triageCandidate = append(wq.triageCandidate, item)
 		} else {

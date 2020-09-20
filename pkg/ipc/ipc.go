@@ -15,7 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 	"unsafe"
-	"syscall"  
+	// "syscall"  
 	// "strconv"
  
 	"github.com/google/syzkaller/pkg/cover"
@@ -286,7 +286,7 @@ func (env *Env) TaskExec(opts *ExecOpts, p *prog.Prog) (output []byte, info *Pro
 		}
 	}
 
-	syscall.Setpriority(syscall.PRIO_PROCESS, env.cmd.cmd.Process.Pid, int(p.Prio))
+	// syscall.Setpriority(syscall.PRIO_PROCESS, env.cmd.cmd.Process.Pid, int(p.Prio))
 	output, hanged, err0, rt_sig = env.cmd.exec(opts, progData)
 	if err0 != nil {
 		env.cmd.close()
@@ -338,7 +338,7 @@ func (env *Env) Exec(opts *ExecOpts, p *prog.Prog) (output []byte, info *ProgInf
 		}
 	}
 
-	syscall.Setpriority(syscall.PRIO_PROCESS, env.cmd.cmd.Process.Pid, int(p.Prio))
+	// syscall.Setpriority(syscall.PRIO_PROCESS, env.cmd.cmd.Process.Pid, int(p.Prio))
 	output, hanged, err0, _ = env.cmd.exec(opts, progData)
 	if err0 != nil {
 		env.cmd.close()

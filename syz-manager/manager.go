@@ -220,8 +220,7 @@ func RunManager(cfg *mgrconfig.Config, target *prog.Target, sysTarget *targets.T
 			maxSignal := mgr.stats.maxSignal.get()
 			mgr.mu.Unlock()
 			numReproducing := atomic.LoadUint32(&mgr.numReproducing)
-			numFuzzing := atomic.LoadUint32(&mgr.numFuzzing)
-
+			numFuzzing := atomic.LoadUint32(&mgr.numFuzzing) 
 			log.Logf(0, "VMs %v, executed %v, corpus cover %v, corpus signal %v, max signal %v, crashes %v, repro %v",
 				numFuzzing, executed, corpusCover, corpusSignal, maxSignal, crashes, numReproducing)
 		}

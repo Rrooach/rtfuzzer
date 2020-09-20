@@ -393,6 +393,7 @@ func (fuzzer *Fuzzer) sendInputToManager(inp rpctype.RPCInput) {
 		Name:     fuzzer.name,
 		RPCInput: inp,
 	}
+	// log.Logf(0, "\n\nsending input to Manager\n\n")
 	if err := fuzzer.manager.Call("Manager.NewInput", a, nil); err != nil {
 		log.Fatalf("Manager.NewInput call failed: %v", err)
 	}
