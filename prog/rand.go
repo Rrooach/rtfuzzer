@@ -542,7 +542,7 @@ func (r *randGen) TaskgenerateParticularCall(s *state, CallName string) (call *C
 			idx = i
 		}
 	}
-	
+
 	meta := r.target.Syscalls[idx]
 
 	if meta.Attrs.Disabled {
