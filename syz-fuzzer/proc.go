@@ -85,11 +85,10 @@ func (proc *Proc) loop() {
 			switch item := item.(type) {
 			case *WorkTriage:
 				// proc.triageInput(item)
-				log.Logf(0, "\n\n\n\n\n\n\nCall TaskTriageInput \n\n\n")
 				proc.TasktriageInput(item)
 			case *WorkCandidate:
 				// proc.execute(proc.execOpts, item.p, item.flags, StatCandidate)
-				proc.Taskexecute(proc.execOpts, item.task, item.flags, StatCandidate)
+				proc.TaskExecute(proc.execOpts, item.task, item.flags, StatCandidate)
 			case *WorkSmash:
 				// proc.smashInput(item)
 				proc.TasksmashInput(item)
@@ -102,11 +101,9 @@ func (proc *Proc) loop() {
 		fuzzerSnapshot := proc.fuzzer.snapshot()
 		if len(fuzzerSnapshot.corpus) == 0 || i%generatePeriod == 0 {
 			// Generate a new prog.
-			// p := proc.fuzzer.target.Generate(proc.rnd, prog.RecommendedCalls, ct)
 			task := proc.fuzzer.target.TaskGenerate(proc.rnd, prog.RecommendedCalls, ct)
-			log.Logf(1, "#%v: generated", proc.pid)
 			// proc.execute(proc.execOpts, p, ProgNormal, StatGenerate)
-			proc.Taskexecute(proc.execOpts, task, ProgNormal, StatGenerate)
+			proc.TaskExecute(proc.execOpts, task, ProgNormal, StatGenerate)
 		} else {
 			// Mutate an existing prog.
 			// modified by Rrooach
@@ -124,7 +121,7 @@ func (proc *Proc) loop() {
 			// p.Mutate(proc.rnd, prog.RecommendedCalls, ct, fuzzerSnapshot.corpus)
 			log.Logf(1, "#%v: mutated", proc.pid)
 			// proc.execute(proc.execOpts, p, ProgNormal, StatFuzz)
-			proc.Taskexecute(proc.execOpts, task, ProgNormal, StatFuzz)
+			proc.TaskExecute(proc.execOpts, task, ProgNormal, StatFuzz)
 		}
 	}
 }
@@ -196,7 +193,7 @@ func (proc *Proc) triageInput(item *WorkTriage) {
 					//modified by Rrooach
 					var task []*prog.Prog
 					task = append(task, p1)
-					infos := proc.Taskexecute(proc.execOptsNoCollide, task, ProgNormal, StatMinimize)
+					infos := proc.TaskExecute(proc.execOptsNoCollide, task, ProgNormal, StatMinimize)
 					// info := proc.execute(proc.execOptsNoCollide, p1, ProgNormal, StatMinimize)
 					info := infos[0]
 					if !reexecutionSuccess(info, &item.info, call1) {
@@ -270,7 +267,7 @@ func (proc *Proc) smashInput(item *WorkSmash) {
 		//modified by Rrooach
 		var task []*prog.Prog
 		task = append(task, p)
-		proc.Taskexecute(proc.execOpts, task, ProgNormal, StatSmash)
+		proc.TaskExecute(proc.execOpts, task, ProgNormal, StatSmash)
 		// proc.execute(proc.execOpts, p, ProgNormal, StatSmash)
 	}
 }
@@ -319,7 +316,7 @@ func (I newlist) Swap(i, j int) {
 	I[i], I[j] = I[j], I[i]
 }
 
-func (proc *Proc) Taskexecute(execOpts *ipc.ExecOpts, task []*prog.Prog, flags ProgTypes, stat Stat) []*ipc.ProgInfo {
+func (proc *Proc) TaskExecute(execOpts *ipc.ExecOpts, task []*prog.Prog, flags ProgTypes, stat Stat) []*ipc.ProgInfo {
 	var infos []*ipc.ProgInfo
 	ch := make(chan *ipc.ProgInfo, len(task))
 	wg := sync.WaitGroup{}
