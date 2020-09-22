@@ -166,12 +166,7 @@ func (proc *Proc) triageInput(item *WorkTriage) {
 		item.p, item.call = prog.Minimize(item.p, item.call, false,
 			func(p1 *prog.Prog, call1 int) bool {
 				for i := 0; i < minimizeAttempts; i++ {
-					//modified by Rrooach
-					var task []*prog.Prog
-					task = append(task, p1)
-					infos := proc.TaskExecute(proc.execOptsNoCollide, task, ProgNormal, StatMinimize)
-					// info := proc.execute(proc.execOptsNoCollide, p1, ProgNormal, StatMinimize)
-					info := infos[0]
+					info := proc.execute(proc.execOptsNoCollide, p1, ProgNormal, StatMinimize)
 					if !reexecutionSuccess(info, &item.info, call1) {
 						// The call was not executed or failed.
 						continue
@@ -240,11 +235,7 @@ func (proc *Proc) smashInput(item *WorkSmash) {
 		p := item.p.Clone()
 		p.Mutate(proc.rnd, prog.RecommendedCalls, proc.fuzzer.choiceTable, fuzzerSnapshot.corpus)
 		log.Logf(1, "#%v: smash mutated", proc.pid)
-		//modified by Rrooach
-		var task []*prog.Prog
-		task = append(task, p)
-		proc.TaskExecute(proc.execOpts, task, ProgNormal, StatSmash)
-		// proc.execute(proc.execOpts, p, ProgNormal, StatSmash)
+		proc.execute(proc.execOpts, p, ProgNormal, StatSmash)
 	}
 }
 
