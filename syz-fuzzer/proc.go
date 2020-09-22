@@ -84,65 +84,41 @@ func (proc *Proc) loop() {
 		if item != nil {
 			switch item := item.(type) {
 			case *WorkTriage:
-				// proc.triageInput(item)
-				proc.TasktriageInput(item)
+				proc.triageInput(item)
 			case *WorkCandidate:
-				// proc.execute(proc.execOpts, item.p, item.flags, StatCandidate)
-				proc.TaskExecute(proc.execOpts, item.task, item.flags, StatCandidate)
+				proc.execute(proc.execOpts, item.p, item.flags, StatCandidate)
 			case *WorkSmash:
-				// proc.smashInput(item)
-				proc.TasksmashInput(item)
+				proc.smashInput(item)
 			default:
 				log.Fatalf("unknown work type: %#v", item)
 			}
 			continue
 		}
-		ct := proc.fuzzer.choiceTable
 		fuzzerSnapshot := proc.fuzzer.snapshot()
+		ct := proc.fuzzer.choiceTable
 		if len(fuzzerSnapshot.corpus) == 0 || i%generatePeriod == 0 {
 			// Generate a new prog.
-			task := proc.fuzzer.target.TaskGenerate(proc.rnd, prog.RecommendedCalls, ct)
-			// proc.execute(proc.execOpts, p, ProgNormal, StatGenerate)
-			proc.TaskExecute(proc.execOpts, task, ProgNormal, StatGenerate)
+			tasks := proc.fuzzer.target.TaskGenerate(proc.rnd, prog.RecommendedCalls, ct)
+			proc.TaskExecute(proc.execOpts, tasks, ProgNormal, StatGenerate)
 		} else {
 			// Mutate an existing prog.
-			// modified by Rrooach
-			rand.Seed(time.Now().Unix())
-			taskLeng := rand.Intn(8-2) + 2
-			var task []*prog.Prog
-			for i := 0; i < taskLeng; i++ {
-				p := fuzzerSnapshot.chooseProgram(proc.rnd).Clone()
-				task = append(task, p)
-			}
-			for _, p := range task {
-				p.Mutate(proc.rnd, prog.RecommendedCalls, ct, fuzzerSnapshot.corpus)
-			}
-			// p := fuzzerSnapshot.chooseProgram(proc.rnd).Clone()
-			// p.Mutate(proc.rnd, prog.RecommendedCalls, ct, fuzzerSnapshot.corpus)
-			log.Logf(1, "#%v: mutated", proc.pid)
-			// proc.execute(proc.execOpts, p, ProgNormal, StatFuzz)
-			proc.TaskExecute(proc.execOpts, task, ProgNormal, StatFuzz)
+			tasks := proc.newMutatedTasks(fuzzerSnapshot)
+			proc.TaskExecute(proc.execOpts, tasks, ProgNormal, StatFuzz)
 		}
 	}
 }
 
-//modified by Rrooach
-func (proc *Proc) TasktriageInput(item *WorkTriage) {
-	log.Logf(1, "#%v: triaging type=%x", proc.pid, item.flags)
-	tempItem := &WorkTriage{
-		p:     item.task[item.pIndex],
-		call:  item.call,
-		info:  item.info,
-		flags: item.flags,
+func (proc *Proc) newMutatedTasks(fuzzerSnapshot FuzzerSnapshot) []*prog.Prog {
+	taskLen := proc.rnd.Intn(7) + 1
+	ct := proc.fuzzer.choiceTable
+	tasks := make([]*prog.Prog, 0, taskLen)
+	for i := 0; i < taskLen; i++ {
+		tasks = append(tasks, fuzzerSnapshot.chooseProgram(proc.rnd).Clone())
 	}
-	proc.triageInput(tempItem)
-	if item.flags&ProgSmashed == 0 {
-		proc.fuzzer.workQueue.enqueue(&WorkSmash{
-			task: item.task,
-			p:    item.task[item.pIndex],
-			call: item.call,
-		})
+	for _, p := range tasks {
+		p.Mutate(proc.rnd, prog.RecommendedCalls, ct, fuzzerSnapshot.corpus)
 	}
+	return tasks
 }
 
 func (proc *Proc) triageInput(item *WorkTriage) {
@@ -316,26 +292,30 @@ func (I newlist) Swap(i, j int) {
 	I[i], I[j] = I[j], I[i]
 }
 
-func (proc *Proc) TaskExecute(execOpts *ipc.ExecOpts, task []*prog.Prog, flags ProgTypes, stat Stat) []*ipc.ProgInfo {
-	var infos []*ipc.ProgInfo
-	ch := make(chan *ipc.ProgInfo, len(task))
+func (proc *Proc) TaskExecute(execOpts *ipc.ExecOpts, tasks []*prog.Prog, flags ProgTypes, stat Stat) []*ipc.ProgInfo {
+	infos := make([]*ipc.ProgInfo, 0, len(tasks))
+	ch := make(chan *ipc.ProgInfo, len(tasks))
 	wg := sync.WaitGroup{}
-	for i, p := range task {
+
+	for i, p := range tasks {
 		taskI := i
 		taskP := p
-		wg.Add(1)
 		go func() {
-			proc.TaskexecuteRaw(execOpts, taskP, stat, ch, taskI)
+			wg.Add(1)
+			info := proc.executeRawWithEnvId(execOpts, taskP, stat, taskI)
+			info.Idx = uint32(taskI)
 			wg.Done()
+			ch <- info
 		}()
 	}
 	wg.Wait()
-	for i := 0; i < len(task); i++ {
+	for i := 0; i < len(tasks); i++ {
 		info := <-ch
 		infos = append(infos, info)
 	}
+
 	sort.Sort(newlist(infos))
-	for j, p := range task {
+	for j, p := range tasks {
 		if int(infos[j].Idx) != j {
 			log.Logf(0, "prog:\n\n prog = %v \n\n info = %v", p, infos[j])
 			panic("unmatch info and prog:\n\n")
@@ -343,10 +323,10 @@ func (proc *Proc) TaskExecute(execOpts *ipc.ExecOpts, task []*prog.Prog, flags P
 		calls, extra := proc.fuzzer.checkNewSignal(p, infos[j])
 		for _, callIndex := range calls {
 			log.Logf(0, "\n\nenqueued!\n\n")
-			proc.TaskenqueueCallTriage(task, flags, callIndex, infos[j].Calls[callIndex], j)
+			proc.enqueueCallTriage(p, flags, callIndex, infos[j].Calls[callIndex])
 		}
 		if extra {
-			proc.TaskenqueueCallTriage(task, flags, -1, infos[j].Extra, j)
+			proc.enqueueCallTriage(p, flags, -1, infos[j].Extra)
 		}
 	}
 	return infos
@@ -354,14 +334,13 @@ func (proc *Proc) TaskExecute(execOpts *ipc.ExecOpts, task []*prog.Prog, flags P
 
 func (proc *Proc) execute(execOpts *ipc.ExecOpts, p *prog.Prog, flags ProgTypes, stat Stat) *ipc.ProgInfo {
 	info := proc.executeRaw(execOpts, p, stat)
-	// calls, extra := proc.fuzzer.checkNewSignal(p, info)
-	// log.Logf(0, "\n\ncalls = %v\n\n", len(calls))
-	// for _, callIndex := range calls {
-	// 	proc.enqueueCallTriage(p, flags, callIndex, info.Calls[callIndex])
-	// }
-	// if extra {
-	// 	proc.enqueueCallTriage(p, flags, -1, info.Extra)
-	// }
+	calls, extra := proc.fuzzer.checkNewSignal(p, info)
+	for _, callIndex := range calls {
+		proc.enqueueCallTriage(p, flags, callIndex, info.Calls[callIndex])
+	}
+	if extra {
+		proc.enqueueCallTriage(p, flags, -1, info.Extra)
+	}
 	return info
 }
 
@@ -379,35 +358,7 @@ func (proc *Proc) enqueueCallTriage(p *prog.Prog, flags ProgTypes, callIndex int
 	})
 }
 
-//modified by Rrooach
-func (proc *Proc) TaskenqueueCallTriage(task []*prog.Prog, flags ProgTypes, callIndex int, info ipc.CallInfo, pIndex int) {
-	// info.Signal points to the output shmem region, detach it before queueing.
-	log.Logf(0, "\n\nTaskenqueued!!\n\n")
-	info.Signal = append([]uint32{}, info.Signal...)
-	tmpTask := make([]*prog.Prog, 0, len(task))
-	for _, p := range task {
-		tmpTask = append(tmpTask, p)
-	}
-	tmpTask[pIndex] = task[pIndex].Clone()
-	// None of the caller use Cover, so just nil it instead of detaching.
-	// Note: triage input uses executeRaw to get coverage.
-	info.Cover = nil
-	proc.fuzzer.workQueue.enqueue(&WorkTriage{
-		task:   tmpTask,
-		call:   callIndex,
-		info:   info,
-		flags:  flags,
-		pIndex: pIndex,
-	})
-}
-
-func (proc *Proc) TaskexecuteRaw(opts *ipc.ExecOpts, p *prog.Prog, stat Stat, ch chan *ipc.ProgInfo, idx int) {
-	info := proc.executeRawWrapper(opts, p, stat, idx)
-	info.Idx = uint32(idx)
-	ch <- info
-}
-
-func (proc *Proc) executeRawWrapper(opts *ipc.ExecOpts, p *prog.Prog, stat Stat, id int) *ipc.ProgInfo {
+func (proc *Proc) executeRawWithEnvId(opts *ipc.ExecOpts, p *prog.Prog, stat Stat, envId int) *ipc.ProgInfo {
 	if opts.Flags&ipc.FlagDedupCover == 0 {
 		log.Fatalf("dedup cover is not enabled")
 	}
@@ -423,8 +374,7 @@ func (proc *Proc) executeRawWrapper(opts *ipc.ExecOpts, p *prog.Prog, stat Stat,
 	proc.logProgram(opts, p)
 	for try := 0; ; try++ {
 		atomic.AddUint64(&proc.fuzzer.stats[stat], 1)
-		output, info, hanged, err := proc.envs[id].Exec(opts, p)
-		// output, info, hanged, err, rt_sig := proc.envs[id].TaskExec(opts, p)
+		output, info, hanged, err := proc.envs[envId].Exec(opts, p)
 		if err != nil {
 			if try > 10 {
 				log.Fatalf("executor %v failed %v times:\n%v", proc.pid, try, err)

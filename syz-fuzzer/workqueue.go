@@ -40,20 +40,16 @@ const (
 // and if yes, minimize them and add to corpus.
 // modified by Rrooach
 type WorkTriage struct {
-	task  []*prog.Prog
 	p     *prog.Prog
 	call  int
 	info  ipc.CallInfo
 	flags ProgTypes
-
-	pIndex int
 }
 
 // WorkCandidate are programs from hub.
 // We don't know yet if they are useful for this fuzzer or not.
 // A proc handles them the same way as locally generated/mutated programs.
 type WorkCandidate struct {
-	task  []*prog.Prog
 	p     *prog.Prog
 	flags ProgTypes
 }
@@ -62,7 +58,6 @@ type WorkCandidate struct {
 // During smashing these programs receive a one-time special attention
 // (emit faults, collect comparison hints, etc).
 type WorkSmash struct {
-	task []*prog.Prog
 	p    *prog.Prog
 	call int
 	prog int
