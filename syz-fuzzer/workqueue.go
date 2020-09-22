@@ -60,7 +60,6 @@ type WorkCandidate struct {
 type WorkSmash struct {
 	p    *prog.Prog
 	call int
-	prog int
 }
 
 func newWorkQueue(procs int, needCandidates chan struct{}) *WorkQueue {

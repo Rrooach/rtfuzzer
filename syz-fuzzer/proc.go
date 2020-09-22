@@ -189,6 +189,9 @@ func (proc *Proc) triageInput(item *WorkTriage) {
 		Cover:  inputCover.Serialize(),
 	})
 	proc.fuzzer.addInputToCorpus(item.p, inputSignal, sig)
+	if item.flags&ProgSmashed == 0 {
+		proc.fuzzer.workQueue.enqueue(&WorkSmash{item.p, item.call})
+	}
 }
 
 func reexecutionSuccess(info *ipc.ProgInfo, oldInfo *ipc.CallInfo, call int) bool {
@@ -212,15 +215,6 @@ func getSignalAndCover(p *prog.Prog, info *ipc.ProgInfo, call int) (signal.Signa
 		inf = &info.Calls[call]
 	}
 	return signal.FromRaw(inf.Signal, signalPrio(p, inf, call)), inf.Cover
-}
-
-//modified by Rrooach
-func (proc *Proc) TasksmashInput(item *WorkSmash) {
-	tempItem := &WorkSmash{
-		p:    item.p,
-		call: item.call,
-	}
-	proc.smashInput(tempItem)
 }
 
 func (proc *Proc) smashInput(item *WorkSmash) {
