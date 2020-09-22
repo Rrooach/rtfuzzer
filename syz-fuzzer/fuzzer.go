@@ -17,7 +17,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/yourbasic/bit"
 	"github.com/google/syzkaller/pkg/csource"
 	"github.com/google/syzkaller/pkg/hash"
 	"github.com/google/syzkaller/pkg/host"
@@ -58,12 +57,11 @@ type Fuzzer struct {
 	signalMu     sync.RWMutex
 	corpusSignal signal.Signal // signal of inputs in corpus
 	maxSignal    signal.Signal // max signal ever observed including flakes
-	newSignal    signal.Signal // diff of maxSignal since last sync with master 
+	newSignal    signal.Signal // diff of maxSignal since last sync with master
 	logMu        sync.Mutex
 
-	set 	     bit.Set 
-	setMu        sync.Mutex
-
+	pidCnt int // pid count
+	setMu  sync.Mutex
 }
 
 type FuzzerSnapshot struct {
@@ -234,7 +232,7 @@ func main() {
 	if *flagRunTest {
 		runTest(target, manager, *flagName, config.Executor)
 		return
-	} 
+	}
 	needPoll := make(chan struct{}, 1)
 	needPoll <- struct{}{}
 	fuzzer := &Fuzzer{
@@ -248,7 +246,8 @@ func main() {
 		target:                   target,
 		faultInjectionEnabled:    r.CheckResult.Features[host.FeatureFault].Enabled,
 		comparisonTracingEnabled: r.CheckResult.Features[host.FeatureComparisons].Enabled,
-		corpusHashes:             make(map[hash.Sig]struct{}), 		  
+		corpusHashes:             make(map[hash.Sig]struct{}),
+		pidCnt:                   0,
 	}
 	gateCallback := fuzzer.useBugFrames(r, *flagProcs)
 	fuzzer.gate = ipc.NewGate(2**flagProcs, gateCallback)
@@ -262,15 +261,13 @@ func main() {
 	fuzzer.choiceTable = target.BuildChoiceTable(fuzzer.corpus, calls)
 
 	for pid := 0; pid < *flagProcs; pid++ {
-		procPid := pid+1024*pid  
-		proc, err := newProc(fuzzer, procPid)
+		proc, err := newProc(fuzzer, pid)
 		if err != nil {
 			log.Fatalf("failed to create proc: %v", err)
 		}
 		fuzzer.procs = append(fuzzer.procs, proc)
 		go proc.loop()
-		// set.Delete(procPid)
-	} 
+	}
 	fuzzer.pollLoop()
 }
 
@@ -468,17 +465,12 @@ func (fuzzer *Fuzzer) addInputToCorpus(p *prog.Prog, sign signal.Signal, sig has
 	}
 }
 
-func (fuzzer *Fuzzer) nextPid(pid  int) int{
+func (fuzzer *Fuzzer) nextPid() int {
+	newPid := fuzzer.pidCnt
 	fuzzer.setMu.Lock()
-	for ; ; {
-		if !fuzzer.set.Contains(pid) {
-			fuzzer.set.Add(pid)
-			break
-		}
-		pid++
-	} 
-    fuzzer.setMu.Unlock()
-    return pid
+	fuzzer.pidCnt++
+	fuzzer.setMu.Unlock()
+	return newPid
 }
 
 func (fuzzer *Fuzzer) snapshot() FuzzerSnapshot {
@@ -515,13 +507,13 @@ func (fuzzer *Fuzzer) corpusSignalDiff(sign signal.Signal) signal.Signal {
 
 func (fuzzer *Fuzzer) checkNewSignal(p *prog.Prog, info *ipc.ProgInfo) (calls []int, extra bool) {
 	fuzzer.signalMu.RLock()
-	defer fuzzer.signalMu.RUnlock() 
-	for i, inf := range info.Calls { 
+	defer fuzzer.signalMu.RUnlock()
+	for i, inf := range info.Calls {
 		if fuzzer.checkNewCallSignal(p, &inf, i) {
 			calls = append(calls, i)
-		} 
-	} 
-	extra = fuzzer.checkNewCallSignal(p, &info.Extra, -1) 
+		}
+	}
+	extra = fuzzer.checkNewCallSignal(p, &info.Extra, -1)
 	return
 }
 
