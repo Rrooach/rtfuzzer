@@ -3,7 +3,7 @@
 *.cfg
 *.tmp
 workdir*
-
+patches/
 bin/
 dashboard/app/config_prod.go
 
