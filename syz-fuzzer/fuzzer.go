@@ -321,6 +321,7 @@ func (fuzzer *Fuzzer) filterDataRaceFrames(frames []string) {
 
 func (fuzzer *Fuzzer) pollLoop() {
 	var execTotal uint64
+	var hangs	  uint64
 	var lastPoll time.Time
 	var lastPrint time.Time
 	ticker := time.NewTicker(3 * time.Second).C
@@ -343,6 +344,7 @@ func (fuzzer *Fuzzer) pollLoop() {
 			}
 			stats := make(map[string]uint64)
 			for _, proc := range fuzzer.procs {
+				stats["hangs"] += proc.env.Hangs //atomic.SwapUint64(&proc.env.Hangs, 0)
 				stats["exec total"] += atomic.SwapUint64(&proc.env.StatExecs, 0)
 				stats["executor restarts"] += atomic.SwapUint64(&proc.env.StatRestarts, 0)
 			}
@@ -350,6 +352,7 @@ func (fuzzer *Fuzzer) pollLoop() {
 				v := atomic.SwapUint64(&fuzzer.stats[stat], 0)
 				stats[statNames[stat]] = v
 				execTotal += v
+				hangs += stats["hangs"]
 			}
 			if !fuzzer.poll(needCandidates, stats) {
 				lastPoll = time.Now()

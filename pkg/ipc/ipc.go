@@ -12,14 +12,13 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings" 
-	"sync/atomic"
-	"time"
-	"unsafe"
-	// "syscall"  
+	"sync/atomic" 
+	"unsafe" 
 	// "strconv"
+	"time"
  
 	"github.com/google/syzkaller/pkg/cover"
-	"github.com/google/syzkaller/pkg/log"
+	// "github.com/google/syzkaller/pkg/log"
 	"github.com/google/syzkaller/pkg/osutil"
 	"github.com/google/syzkaller/pkg/signal"
 	"github.com/google/syzkaller/prog"
@@ -117,8 +116,9 @@ type Env struct {
 
 	StatExecs    uint64
 	StatRestarts uint64
+	Hangs		 uint64
 }
-
+ 
 const (
 	outputSize = 16 << 20
 
@@ -192,7 +192,7 @@ func MakeEnv(config *Config, pid int) (*Env, error) {
 		outFile: outf,
 		bin:     strings.Split(config.Executor, " "),
 		pid:     pid,
-		config:  config,
+		config:  config, 
 	}
 	if len(env.bin) == 0 {
 		return nil, fmt.Errorf("binary is empty string")
@@ -288,6 +288,9 @@ func (env *Env) TaskExec(opts *ExecOpts, p *prog.Prog) (output []byte, info *Pro
 
 	// syscall.Setpriority(syscall.PRIO_PROCESS, env.cmd.cmd.Process.Pid, int(p.Prio))
 	output, hanged, err0, rt_sig = env.cmd.exec(opts, progData)
+	if hanged { 
+		atomic.AddUint64(&env.Hangs, 1)
+	}
 	if err0 != nil {
 		env.cmd.close()
 		env.cmd = nil
@@ -321,8 +324,7 @@ func (env *Env) Exec(opts *ExecOpts, p *prog.Prog) (output []byte, info *ProgInf
 	// if executor crashes before writing non-garbage there.
 	for i := 0; i < 4; i++ {
 		env.out[i] = 0
-	}
-
+	} 
 	atomic.AddUint64(&env.StatExecs, 1)
 	if env.cmd == nil {
 		if p.Target.OS != "test" && targets.Get(p.Target.OS, p.Target.Arch).HostFuzzer {
@@ -340,6 +342,9 @@ func (env *Env) Exec(opts *ExecOpts, p *prog.Prog) (output []byte, info *ProgInf
 
 	// syscall.Setpriority(syscall.PRIO_PROCESS, env.cmd.cmd.Process.Pid, int(p.Prio))
 	output, hanged, err0, _ = env.cmd.exec(opts, progData)
+	if hanged { 
+		atomic.AddUint64(&env.Hangs, 1)
+	}
 	if err0 != nil {
 		env.cmd.close()
 		env.cmd = nil
@@ -730,7 +735,7 @@ func (c *command) handshake() error {
 		reply := &handshakeReply{}
 		replyData := (*[unsafe.Sizeof(*reply)]byte)(unsafe.Pointer(reply))[:]
 		if _, err := io.ReadFull(c.inrp, replyData); err != nil {
-			log.Logf(0, "handshakeeee failed!")
+			// log.Logf(0, "handshakeeee failed!")
 			read <- err
 			return
 		}

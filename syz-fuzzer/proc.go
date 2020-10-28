@@ -302,12 +302,12 @@ func (proc *Proc) TaskExecute(execOpts *ipc.ExecOpts, tasks []*prog.Prog, flags 
 	sort.Sort(newlist(infos))
 	for j, p := range tasks {
 		if int(infos[j].Idx) != j {
-			log.Logf(0, "prog:\n\n prog = %v \n\n info = %v", p, infos[j])
+			// log.Logf(0, "prog:\n\n prog = %v \n\n info = %v", p, infos[j])
 			panic("unmatch info and prog:\n\n")
 		}
 		calls, extra := proc.fuzzer.checkNewSignal(p, infos[j])
 		for _, callIndex := range calls {
-			log.Logf(0, "\n\nenqueued!\n\n")
+			// log.Logf(0, "\n\nenqueued!\n\n")
 			proc.enqueueCallTriage(p, flags, callIndex, infos[j].Calls[callIndex])
 		}
 		if extra {
@@ -368,6 +368,10 @@ func (proc *Proc) executeRawWithEnvId(opts *ipc.ExecOpts, p *prog.Prog, stat Sta
 			debug.FreeOSMemory()
 			time.Sleep(time.Second)
 			continue
+		}
+		if hanged == true {
+			log.Logf(0, "hangs=%v", hanged)
+			atomic.AddUint64(&proc.fuzzer.stats[stat], 1)
 		}
 		log.Logf(2, "result hanged=%v: %s", hanged, output)
 		return info

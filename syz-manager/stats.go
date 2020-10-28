@@ -28,6 +28,7 @@ type Stats struct {
 	corpusCover      Stat
 	corpusSignal     Stat
 	maxSignal        Stat
+	hangs			 Stat
 
 	mu         sync.Mutex
 	namedStats map[string]uint64
@@ -46,6 +47,7 @@ func (stats *Stats) all() map[string]uint64 {
 		"cover":          stats.corpusCover.get(),
 		"signal":         stats.corpusSignal.get(),
 		"max signal":     stats.maxSignal.get(),
+		"hangs":		  stats.hangs.get(),
 	}
 	if stats.haveHub {
 		m["hub: send prog add"] = stats.hubSendProgAdd.get()
@@ -72,6 +74,8 @@ func (stats *Stats) mergeNamed(named map[string]uint64) {
 	}
 	for k, v := range named {
 		switch k {
+		case "hangs":
+			stats.hangs.add(int(v))
 		case "exec total":
 			stats.execTotal.add(int(v))
 		default:

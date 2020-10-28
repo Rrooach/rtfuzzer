@@ -617,6 +617,10 @@ func (mgr *Manager) saveCrash(crash *Crash) bool {
 		mgr.dataRaceFrames[crash.Frame] = true
 		mgr.mu.Unlock()
 	}
+	if crash.Type == report.Hang {
+		mgr.stats.hangs.inc()
+		return false
+	}
 	if crash.Suppressed {
 		log.Logf(0, "vm-%v: suppressed crash %v", crash.vmIndex, crash.Title)
 		mgr.stats.crashSuppressed.inc()
